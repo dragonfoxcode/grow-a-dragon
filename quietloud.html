@@ -1620,7 +1620,9 @@
       state.lastTimestamp = performance.now();
 
       function tick(now) {
-        const delta = now - state.lastTimestamp;
+        // The frame timestamp can be slightly earlier than the performance.now()
+        // saved on click, so never let time run backwards
+        const delta = Math.max(0, now - state.lastTimestamp);
         state.lastTimestamp = now;
 
         if (state.activeTimer) {
@@ -1911,7 +1913,7 @@
     ];
 
     function checkDragonLevel() {
-      const target = Math.min(DRAGON_MAX_LEVEL, Math.floor(state.dragonXpMs / DRAGON_LEVEL_MS));
+      const target = Math.max(0, Math.min(DRAGON_MAX_LEVEL, Math.floor(state.dragonXpMs / DRAGON_LEVEL_MS)));
       if (target === state.dragonLevel) return;
 
       const grew = target > state.dragonLevel;
