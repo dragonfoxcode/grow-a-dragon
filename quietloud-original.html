@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Loud & Quiet Chess Timer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts for digital mono display and sleek UI typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            loud: {
+              400: '#fb923c',
+              500: '#f97316',
+              600: '#ea580c',
+              glow: 'rgba(249, 115, 22, 0.45)',
+            },
+            quiet: {
+              400: '#38bdf8',
+              500: '#06b6d4',
+              600: '#0284c7',
+              glow: 'rgba(6, 182, 212, 0.45)',
+            }
+          },
+          animation: {
+            'pulse-subtle': 'pulseSubtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'bounce-sm': 'bounceSm 0.5s ease-in-out',
+          },
+          keyframes: {
+            pulseSubtle: {
+              '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+              '50%': { opacity: '0.94', transform: 'scale(1.008)' },
+            },
+            bounceSm: {
+              '0%, 100%': { transform: 'scale(1)' },
+              '50%': { transform: 'scale(0.97)' }
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom styling for sleek tactile chess clock touch feedback */
+    * {
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .timer-card {
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .timer-card:active {
+      transform: scale(0.985);
+    }
+    .glow-loud {
+      box-shadow: 0 0 45px -8px rgba(249, 115, 22, 0.55), inset 0 0 20px rgba(249, 115, 22, 0.15);
+      border-color: rgba(249, 115, 22, 0.8) !important;
+    }
+    .glow-quiet {
+      box-shadow: 0 0 45px -8px rgba(6, 182, 212, 0.55), inset 0 0 20px rgba(6, 182, 212, 0.15);
+      border-color: rgba(6, 182, 212, 0.8) !important;
+    }
+    /* Subtle custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+    /* Pulse ring on active tag */
+    @keyframes ping-slow {
+      0% { transform: scale(1); opacity: 0.8; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+    .animate-ping-slow {
+      animation: ping-slow 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col justify-between overflow-x-hidden selection:bg-orange-500 selection:text-white">
+
+  <!-- Header / Top Bar -->
+  <header class="w-full px-4 sm:px-8 py-3.5 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md flex items-center justify-between z-30 sticky top-0">
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-1.5 p-1.5 bg-slate-800 rounded-xl border border-slate-700/60">
+        <span class="w-2.5 h-2.5 rounded-full bg-loud-500 inline-block animate-pulse"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-quiet-500 inline-block"></span>
+      </div>
+      <div>
+        <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2">
+          Dual Chess Timer
+          <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">Loud / Quiet</span>
+        </h1>
+      </div>
+    </div>
+
+    <!-- Quick action toggles: sound, help modal, settings -->
+    <div class="flex items-center gap-2 sm:gap-3">
+      <!-- Audio Toggle Button -->
+      <button id="soundToggleBtn" title="Toggle Sound (M)" class="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/80 transition-colors">
+        <span id="soundIconWrapper" class="text-emerald-400">
+          <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+        </span>
+        <span class="hidden sm:inline" id="soundLabel">Audio On</span>
+      </button>
+
+      <!-- Settings Dropdown / Panel Toggle -->
+      <button id="settingsModalBtn" title="Timer Settings" class="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/80 transition-colors">
+        <svg class="w-4 h-4 text-slate-300" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+        <span class="hidden sm:inline">Modes</span>
+      </button>
+
+      <!-- Keyboard shortcuts reference -->
+      <button id="helpModalBtn" title="Keyboard Shortcuts (?)" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition-colors">
+        <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Playing Field (Dual Clock + Center Hub) -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 lg:p-8 flex flex-col justify-center">
+    
+    <!-- Timer Cards Grid -->
+    <div class="relative grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-8 items-stretch">
+      
+      <!-- LOUD TIME CARD -->
+      <div id="loudCard" class="timer-card group relative flex flex-col justify-between p-6 sm:p-8 rounded-3xl cursor-pointer bg-gradient-to-b from-slate-900 to-slate-900/90 border-2 border-slate-800 hover:border-loud-500/50 shadow-2xl overflow-hidden min-h-[260px] sm:min-h-[320px] transition-all duration-300">
+        <!-- Ambient background gradient on active -->
+        <div id="loudAura" class="absolute inset-0 bg-radial from-loud-500/15 via-transparent to-transparent opacity-0 pointer-events-none transition-opacity duration-300"></div>
+
+        <!-- Top Status Bar for Loud -->
+        <div class="relative z-10 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="p-2.5 rounded-2xl bg-loud-500/10 border border-loud-500/30 text-loud-400">
+              <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
+            </div>
+            <div>
+              <span class="text-xs font-bold tracking-widest uppercase text-loud-400">Speaker / Focus</span>
+              <h2 class="text-xl sm:text-2xl font-black text-white tracking-tight">Loud Time</h2>
+            </div>
+          </div>
+
+          <div id="loudStatusPill" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700/60 transition-all">
+            <span id="loudStatusDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+            <span id="loudStatusText">IDLE</span>
+          </div>
+        </div>
+
+        <!-- Time Counter Display -->
+        <div class="relative z-10 my-auto py-4 text-center">
+          <div id="loudTimeDisplay" class="font-mono text-5xl sm:text-7xl lg:text-8xl font-black tracking-tight text-white drop-shadow-md select-none">
+            00:00.0
+          </div>
+          <p class="text-xs sm:text-sm text-slate-400 mt-2 font-mono" id="loudSubDetails">Tap here or press [Left Arrow / A]</p>
+        </div>
+
+        <!-- Loud Footer details -->
+        <div class="relative z-10 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-3">
+          <span class="flex items-center gap-1.5 font-medium">
+            <svg class="w-3.5 h-3.5 text-loud-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <span id="loudTurnsCount">0 moves</span>
+          </span>
+          <span id="loudShareText" class="font-mono font-semibold text-loud-400 text-sm">50.0%</span>
+        </div>
+      </div>
+
+      <!-- CENTER CONTROL HUB (Desktop Floating Badge / Mobile Centered Bar) -->
+      <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col md:flex-row items-center gap-2 pointer-events-auto">
+        <button id="centerPauseBtn" title="Spacebar: Pause / Resume" class="relative group flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-slate-900 border-2 border-slate-700 hover:border-white shadow-[0_10px_35px_rgba(0,0,0,0.8)] hover:scale-105 active:scale-95 transition-all text-white focus:outline-none ring-4 ring-slate-950/80">
+          <div class="absolute -inset-1 rounded-full bg-gradient-to-r from-loud-500 to-quiet-500 opacity-20 group-hover:opacity-60 blur-sm transition-opacity"></div>
+          <div id="pauseIconContainer" class="relative z-10 flex items-center justify-center">
+            <!-- Dynamic Play / Pause SVG injected via script -->
+            <span id="centerButtonIcon">
+              <svg class="w-7 h-7 sm:w-9 sm:h-9 text-white transition-transform group-hover:scale-110" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            </span>
+          </div>
+        </button>
+      </div>
+
+      <!-- QUIET TIME CARD -->
+      <div id="quietCard" class="timer-card group relative flex flex-col justify-between p-6 sm:p-8 rounded-3xl cursor-pointer bg-gradient-to-b from-slate-900 to-slate-900/90 border-2 border-slate-800 hover:border-quiet-500/50 shadow-2xl overflow-hidden min-h-[260px] sm:min-h-[320px] transition-all duration-300">
+        <!-- Ambient background gradient on active -->
+        <div id="quietAura" class="absolute inset-0 bg-radial from-quiet-500/15 via-transparent to-transparent opacity-0 pointer-events-none transition-opacity duration-300"></div>
+
+        <!-- Top Status Bar for Quiet -->
+        <div class="relative z-10 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="p-2.5 rounded-2xl bg-quiet-500/10 border border-quiet-500/30 text-quiet-400">
+              <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"></path><line x1="16" y1="8" x2="2" y2="22"></line><line x1="17.5" y1="15" x2="9" y2="15"></line></svg>
+            </div>
+            <div>
+              <span class="text-xs font-bold tracking-widest uppercase text-quiet-400">Listener / Reflection</span>
+              <h2 class="text-xl sm:text-2xl font-black text-white tracking-tight">Quiet Time</h2>
+            </div>
+          </div>
+
+          <div id="quietStatusPill" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700/60 transition-all">
+            <span id="quietStatusDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+            <span id="quietStatusText">IDLE</span>
+          </div>
+        </div>
+
+        <!-- Time Counter Display -->
+        <div class="relative z-10 my-auto py-4 text-center">
+          <div id="quietTimeDisplay" class="font-mono text-5xl sm:text-7xl lg:text-8xl font-black tracking-tight text-white drop-shadow-md select-none">
+            00:00.0
+          </div>
+          <p class="text-xs sm:text-sm text-slate-400 mt-2 font-mono" id="quietSubDetails">Tap here or press [Right Arrow / L]</p>
+        </div>
+
+        <!-- Quiet Footer details -->
+        <div class="relative z-10 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-3">
+          <span class="flex items-center gap-1.5 font-medium">
+            <svg class="w-3.5 h-3.5 text-quiet-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <span id="quietTurnsCount">0 moves</span>
+          </span>
+          <span id="quietShareText" class="font-mono font-semibold text-quiet-400 text-sm">50.0%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Action Bar under clocks (Reset, Mode indicators, Sound tick) -->
+    <div class="mt-6 flex flex-wrap items-center justify-center gap-3 text-sm">
+      <button id="quickResetBtn" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-rose-500/60 hover:bg-rose-950/30 text-slate-300 hover:text-rose-300 transition-all shadow-sm">
+        <svg class="w-4 h-4 text-rose-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+        <span>Reset Clock <kbd class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 font-mono">R</kbd></span>
+      </button>
+
+      <button id="swapActiveBtn" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-600 text-slate-300 hover:text-white transition-all shadow-sm">
+        <svg class="w-4 h-4 text-amber-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+        <span>Switch Active Turn</span>
+      </button>
+
+      <!-- Tick sound toggle button -->
+      <button id="tickToggleBtn" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-600 text-slate-400 transition-all shadow-sm">
+        <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        <span id="tickText">Ticking: Off</span>
+      </button>
+    </div>
+
+    <!-- Comparison Progress & Session Statistics -->
+    <div class="mt-8 bg-slate-900/70 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl backdrop-blur-md">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+        <div>
+          <h3 class="font-bold text-sm text-slate-200 uppercase tracking-wider flex items-center gap-2">
+            <svg class="w-4 h-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+            Time Distribution Ratio
+          </h3>
+          <p class="text-xs text-slate-400">Real-time split between active speaker time and silent reflection</p>
+        </div>
+        <div class="flex items-center gap-4 text-xs font-mono text-slate-300">
+          <div>Total: <span id="totalTimeDisplay" class="font-bold text-white text-sm">00:00.0</span></div>
+          <div class="hidden sm:block text-slate-600">|</div>
+          <div>Switches: <span id="totalSwitchesDisplay" class="font-bold text-white text-sm">0</span></div>
+        </div>
+      </div>
+
+      <!-- Ratio Visual Bar -->
+      <div class="w-full h-4 bg-slate-950 rounded-full overflow-hidden flex p-0.5 border border-slate-800 shadow-inner">
+        <div id="loudProgressBar" class="h-full bg-gradient-to-r from-loud-600 to-loud-400 rounded-l-full transition-all duration-200" style="width: 50%;"></div>
+        <div id="quietProgressBar" class="h-full bg-gradient-to-r from-quiet-500 to-quiet-600 rounded-r-full transition-all duration-200" style="width: 50%;"></div>
+      </div>
+
+      <!-- Labels below progress -->
+      <div class="flex justify-between items-center text-xs font-mono mt-2 font-semibold">
+        <span class="text-loud-400 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-loud-500 inline-block"></span>
+          Loud: <span id="loudRatioLabel">50%</span>
+        </span>
+        <span class="text-quiet-400 flex items-center gap-1.5">
+          Quiet: <span id="quietRatioLabel">50%</span>
+          <span class="w-2 h-2 rounded-full bg-quiet-500 inline-block"></span>
+        </span>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer Navigation / Mode Indicator -->
+  <footer class="w-full px-4 sm:px-8 py-3 border-t border-slate-900 bg-slate-950/80 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2">
+    <div class="flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+      <span id="currentModeLabel" class="text-slate-400 font-medium">Mode: Count-Up (Stopwatch)</span>
+    </div>
+    <div class="flex items-center gap-4 text-slate-400">
+      <span>Space = Pause</span>
+      <span>← / A = Loud</span>
+      <span>→ / L = Quiet</span>
+    </div>
+  </footer>
+
+  <!-- SETTINGS MODAL -->
+  <div id="settingsModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl relative">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 text-slate-300" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <h3 class="font-bold text-lg text-white">Timer Configuration</h3>
+        </div>
+        <button id="closeSettingsBtn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+          <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <div class="mt-5 space-y-6">
+        <!-- Timer Type: Count-Up vs Count-Down -->
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Timer Mode</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="modeCountUpBtn" class="py-2.5 px-4 rounded-xl border font-semibold text-sm transition-all flex items-center justify-center gap-2 bg-loud-500/20 text-loud-400 border-loud-500">
+              <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+              Count-Up
+            </button>
+            <button id="modeCountDownBtn" class="py-2.5 px-4 rounded-xl border font-semibold text-sm transition-all flex items-center justify-center gap-2 bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750">
+              <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"></path><path d="M5 2h14"></path><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"></path><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"></path></svg>
+              Count-Down
+            </button>
+          </div>
+        </div>
+
+        <!-- Preset Countdown options -->
+        <div id="countdownPresetsContainer" class="hidden space-y-3">
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Starting Duration Per Side</label>
+          <div class="grid grid-cols-4 gap-2">
+            <button data-duration="180" class="preset-btn py-2 text-xs font-mono font-bold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200">3 min</button>
+            <button data-duration="300" class="preset-btn py-2 text-xs font-mono font-bold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 active-preset border-loud-500 bg-loud-500/20 text-loud-400">5 min</button>
+            <button data-duration="600" class="preset-btn py-2 text-xs font-mono font-bold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200">10 min</button>
+            <button data-duration="900" class="preset-btn py-2 text-xs font-mono font-bold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200">15 min</button>
+          </div>
+
+          <div class="flex items-center gap-2 mt-2">
+            <span class="text-xs text-slate-400 whitespace-nowrap">Custom (mins):</span>
+            <input type="number" id="customMinutesInput" min="1" max="180" value="5" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white font-mono focus:border-loud-500 focus:outline-none">
+          </div>
+        </div>
+
+        <!-- Precision option (Millisecond display toggle) -->
+        <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+          <div>
+            <div class="text-sm font-semibold text-white">Show Tenths / Deciseconds</div>
+            <div class="text-xs text-slate-400">Display tenth-of-a-second decimal point</div>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="precisionToggle" checked class="sr-only peer">
+            <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-loud-500"></div>
+          </label>
+        </div>
+
+        <div class="pt-4 flex justify-end gap-2">
+          <button id="applySettingsBtn" class="w-full py-2.5 rounded-xl bg-loud-500 hover:bg-loud-600 text-slate-950 font-bold text-sm transition-colors shadow-lg shadow-loud-500/20">
+            Apply & Reset Timers
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SHORTCUTS & HELP MODAL -->
+  <div id="helpModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl relative">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 text-loud-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><line x1="6" y1="8" x2="6" y2="8"></line><line x1="10" y1="8" x2="10" y2="8"></line><line x1="14" y1="8" x2="14" y2="8"></line><line x1="18" y1="8" x2="18" y2="8"></line><line x1="6" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="18" y2="12"></line><line x1="9" y1="16" x2="15" y2="16"></line></svg>
+          <h3 class="font-bold text-lg text-white">Keyboard Shortcuts</h3>
+        </div>
+        <button id="closeHelpBtn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+          <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <div class="mt-4 space-y-3 font-mono text-sm">
+        <div class="flex items-center justify-between py-2 border-b border-slate-800">
+          <span class="text-slate-300 font-sans">Pause / Resume</span>
+          <kbd class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-white font-bold text-xs">Spacebar</kbd>
+        </div>
+        <div class="flex items-center justify-between py-2 border-b border-slate-800">
+          <span class="text-slate-300 font-sans">Activate Loud Time</span>
+          <div class="flex gap-1.5">
+            <kbd class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-loud-400 text-xs">←</kbd>
+            <span class="text-slate-500 font-sans">or</span>
+            <kbd class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-loud-400 text-xs">A</kbd>
+          </div>
+        </div>
+        <div class="flex items-center justify-between py-2 border-b border-slate-800">
+          <span class="text-slate-300 font-sans">Activate Quiet Time</span>
+          <div class="flex gap-1.5">
+            <kbd class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-quiet-400 text-xs">→</kbd>
+            <span class="text-slate-500 font-sans">or</span>
+            <kbd class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-quiet-400 text-xs">L</kbd>
+          </div>
+        </div>
+        <div class="flex items-center justify-between py-2 border-b border-slate-800">
+          <span class="text-slate-300 font-sans">Reset Timers</span>
+          <kbd class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-rose-400 font-bold text-xs">R</kbd>
+        </div>
+        <div class="flex items-center justify-between py-2 border-b border-slate-800">
+          <span class="text-slate-300 font-sans">Toggle Mute Audio</span>
+          <kbd class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-emerald-400 font-bold text-xs">M</kbd>
+        </div>
+      </div>
+
+      <div class="mt-6">
+        <button id="understoodHelpBtn" class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm transition">
+          Got it
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIME-EXPIRED ALERT MODAL FOR COUNTDOWN -->
+  <div id="timeExpiredModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border-2 border-rose-500/80 rounded-3xl w-full max-w-sm p-6 text-center shadow-[0_0_50px_rgba(244,63,94,0.4)]">
+      <div class="w-16 h-16 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-4 border border-rose-500/40 animate-bounce">
+        <svg class="w-8 h-8" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+      </div>
+      <h3 class="text-xl font-bold text-white" id="timeExpiredTitle">Time Expired!</h3>
+      <p class="text-sm text-slate-300 mt-2" id="timeExpiredMessage">Countdown has reached zero.</p>
+      <div class="mt-6 flex gap-2">
+        <button id="dismissExpiredBtn" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm transition">
+          Dismiss
+        </button>
+        <button id="resetFromExpiredBtn" class="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm transition">
+          Reset All
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ==========================================================================
+       SYNTHETIC SOUND ENGINE (Web Audio API)
+       ========================================================================== */
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.enabled = true;
+        this.ticking = false;
+        this.lastTickTime = 0;
+      }
+
+      initContext() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) {
+            this.ctx = new AudioContext();
+          }
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playSwitchTone(isLoud) {
+        if (!this.enabled) return;
+        this.initContext();
+        if (!this.ctx) return;
+
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        // Warm energetic frequency for Loud, airy chime for Quiet
+        if (isLoud) {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(320, now);
+          osc.frequency.exponentialRampToValueAtTime(540, now + 0.08);
+          gain.gain.setValueAtTime(0.25, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        } else {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(640, now);
+          osc.frequency.exponentialRampToValueAtTime(880, now + 0.09);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        }
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.16);
+      }
+
+      playPauseSound() {
+        if (!this.enabled) return;
+        this.initContext();
+        if (!this.ctx) return;
+
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.linearRampToValueAtTime(220, now + 0.1);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      }
+
+      playResetSound() {
+        if (!this.enabled) return;
+        this.initContext();
+        if (!this.ctx) return;
+
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(260, now);
+        osc.frequency.exponentialRampToValueAtTime(130, now + 0.2);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.22);
+      }
+
+      playTick() {
+        if (!this.enabled || !this.ticking) return;
+        this.initContext();
+        if (!this.ctx) return;
+
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, now);
+        gain.gain.setValueAtTime(0.03, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.02);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.025);
+      }
+
+      playAlarm() {
+        if (!this.enabled) return;
+        this.initContext();
+        if (!this.ctx) return;
+
+        // Tri-tone urgent beep
+        [0, 0.15, 0.3].forEach((delay, idx) => {
+          const now = this.ctx.currentTime + delay;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(idx % 2 === 0 ? 880 : 1046, now);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.13);
+        });
+      }
+    }
+
+    /* ==========================================================================
+       APP STATE & CONFIGURATION
+       ========================================================================== */
+    const state = {
+      mode: 'count-up', // 'count-up' | 'count-down'
+      countdownDuration: 300, // seconds per side default (5 min)
+      showDeciseconds: true,
+
+      activeTimer: null, // 'loud' | 'quiet' | null (paused)
+      lastActiveSide: 'loud', // keeps track of who was active for simple unpause
+
+      loudElapsedMs: 0,
+      quietElapsedMs: 0,
+
+      loudTurns: 0,
+      quietTurns: 0,
+      totalSwitches: 0,
+
+      lastTimestamp: null,
+      animationFrameId: null,
+
+      secondTracker: 0 // to emit second tick sounds
+    };
+
+    const sound = new SoundEngine();
+
+    /* ==========================================================================
+       DOM REFERENCES
+       ========================================================================== */
+    const dom = {
+      // Cards
+      loudCard: document.getElementById('loudCard'),
+      quietCard: document.getElementById('quietCard'),
+      loudAura: document.getElementById('loudAura'),
+      quietAura: document.getElementById('quietAura'),
+      loudTimeDisplay: document.getElementById('loudTimeDisplay'),
+      quietTimeDisplay: document.getElementById('quietTimeDisplay'),
+      loudStatusPill: document.getElementById('loudStatusPill'),
+      quietStatusPill: document.getElementById('quietStatusPill'),
+      loudStatusDot: document.getElementById('loudStatusDot'),
+      quietStatusDot: document.getElementById('quietStatusDot'),
+      loudStatusText: document.getElementById('loudStatusText'),
+      quietStatusText: document.getElementById('quietStatusText'),
+      loudTurnsCount: document.getElementById('loudTurnsCount'),
+      quietTurnsCount: document.getElementById('quietTurnsCount'),
+      loudShareText: document.getElementById('loudShareText'),
+      quietShareText: document.getElementById('quietShareText'),
+
+      // Controls
+      centerPauseBtn: document.getElementById('centerPauseBtn'),
+      centerButtonIcon: document.getElementById('centerButtonIcon'),
+      quickResetBtn: document.getElementById('quickResetBtn'),
+      swapActiveBtn: document.getElementById('swapActiveBtn'),
+      soundToggleBtn: document.getElementById('soundToggleBtn'),
+      soundIconWrapper: document.getElementById('soundIconWrapper'),
+      soundLabel: document.getElementById('soundLabel'),
+      tickToggleBtn: document.getElementById('tickToggleBtn'),
+      tickText: document.getElementById('tickText'),
+
+      // Stats
+      loudProgressBar: document.getElementById('loudProgressBar'),
+      quietProgressBar: document.getElementById('quietProgressBar'),
+      loudRatioLabel: document.getElementById('loudRatioLabel'),
+      quietRatioLabel: document.getElementById('quietRatioLabel'),
+      totalTimeDisplay: document.getElementById('totalTimeDisplay'),
+      totalSwitchesDisplay: document.getElementById('totalSwitchesDisplay'),
+      currentModeLabel: document.getElementById('currentModeLabel'),
+
+      // Settings Modal
+      settingsModal: document.getElementById('settingsModal'),
+      settingsModalBtn: document.getElementById('settingsModalBtn'),
+      closeSettingsBtn: document.getElementById('closeSettingsBtn'),
+      modeCountUpBtn: document.getElementById('modeCountUpBtn'),
+      modeCountDownBtn: document.getElementById('modeCountDownBtn'),
+      countdownPresetsContainer: document.getElementById('countdownPresetsContainer'),
+      customMinutesInput: document.getElementById('customMinutesInput'),
+      precisionToggle: document.getElementById('precisionToggle'),
+      applySettingsBtn: document.getElementById('applySettingsBtn'),
+
+      // Help Modal
+      helpModal: document.getElementById('helpModal'),
+      helpModalBtn: document.getElementById('helpModalBtn'),
+      closeHelpBtn: document.getElementById('closeHelpBtn'),
+      understoodHelpBtn: document.getElementById('understoodHelpBtn'),
+
+      // Expired modal
+      timeExpiredModal: document.getElementById('timeExpiredModal'),
+      timeExpiredTitle: document.getElementById('timeExpiredTitle'),
+      timeExpiredMessage: document.getElementById('timeExpiredMessage'),
+      dismissExpiredBtn: document.getElementById('dismissExpiredBtn'),
+      resetFromExpiredBtn: document.getElementById('resetFromExpiredBtn')
+    };
+
+    /* ==========================================================================
+       TIME FORMATTING HELPERS
+       ========================================================================== */
+    function formatTime(ms, includeDeci = true) {
+      if (ms < 0) ms = 0;
+      const totalSeconds = Math.floor(ms / 1000);
+      const decisecond = Math.floor((ms % 1000) / 100);
+
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+
+      const pad = (n) => String(n).padStart(2, '0');
+
+      let str = '';
+      if (hours > 0) {
+        str = `${hours}:${pad(minutes)}:${pad(seconds)}`;
+      } else {
+        str = `${pad(minutes)}:${pad(seconds)}`;
+      }
+
+      if (includeDeci) {
+        str += `.${decisecond}`;
+      }
+      return str;
+    }
+
+    /* ==========================================================================
+       CORE TIMER MECHANICS & LOOP
+       ========================================================================== */
+    function startTimerLoop() {
+      if (state.animationFrameId) cancelAnimationFrame(state.animationFrameId);
+      state.lastTimestamp = performance.now();
+
+      function tick(now) {
+        const delta = now - state.lastTimestamp;
+        state.lastTimestamp = now;
+
+        if (state.activeTimer) {
+          if (state.activeTimer === 'loud') {
+            state.loudElapsedMs += delta;
+          } else if (state.activeTimer === 'quiet') {
+            state.quietElapsedMs += delta;
+          }
+
+          // Audible ticking check every elapsed full second
+          state.secondTracker += delta;
+          if (state.secondTracker >= 1000) {
+            state.secondTracker %= 1000;
+            sound.playTick();
+          }
+
+          // Check countdown expiration if in count-down mode
+          if (state.mode === 'count-down') {
+            const limitMs = state.countdownDuration * 1000;
+            if (state.activeTimer === 'loud' && state.loudElapsedMs >= limitMs) {
+              state.loudElapsedMs = limitMs;
+              handleCountdownExpired('Loud Time');
+              return;
+            } else if (state.activeTimer === 'quiet' && state.quietElapsedMs >= limitMs) {
+              state.quietElapsedMs = limitMs;
+              handleCountdownExpired('Quiet Time');
+              return;
+            }
+          }
+
+          updateDisplay();
+        }
+
+        state.animationFrameId = requestAnimationFrame(tick);
+      }
+
+      state.animationFrameId = requestAnimationFrame(tick);
+    }
+
+    function handleCountdownExpired(timerName) {
+      pauseTimer();
+      sound.playAlarm();
+      dom.timeExpiredTitle.textContent = `${timerName} Expired!`;
+      dom.timeExpiredMessage.textContent = `The countdown for ${timerName} reached zero. Switch turns or reset clock.`;
+      dom.timeExpiredModal.classList.remove('hidden');
+      dom.timeExpiredModal.classList.add('flex');
+    }
+
+    /* ==========================================================================
+       INTERACTION METHODS
+       ========================================================================== */
+    function activateTimer(target) {
+      if (state.activeTimer === target) {
+        // Tapping already active timer flips to opposite side like chess clock!
+        const alternate = target === 'loud' ? 'quiet' : 'loud';
+        activateTimer(alternate);
+        return;
+      }
+
+      const isSwitchingSides = state.activeTimer !== null && state.activeTimer !== target;
+      
+      if (target === 'loud') {
+        state.loudTurns++;
+        dom.loudTurnsCount.textContent = `${state.loudTurns} moves`;
+      } else {
+        state.quietTurns++;
+        dom.quietTurnsCount.textContent = `${state.quietTurns} moves`;
+      }
+
+      if (isSwitchingSides) {
+        state.totalSwitches++;
+        dom.totalSwitchesDisplay.textContent = state.totalSwitches;
+      }
+
+      state.activeTimer = target;
+      state.lastActiveSide = target;
+      state.lastTimestamp = performance.now();
+
+      sound.playSwitchTone(target === 'loud');
+      applyVisualState();
+      updateDisplay();
+    }
+
+    function pauseTimer() {
+      if (state.activeTimer === null) {
+        // If currently paused, unpause resuming the last active side
+        activateTimer(state.lastActiveSide || 'loud');
+        return;
+      }
+
+      state.activeTimer = null;
+      sound.playPauseSound();
+      applyVisualState();
+      updateDisplay();
+    }
+
+    function resetAllTimers() {
+      state.activeTimer = null;
+      state.loudElapsedMs = 0;
+      state.quietElapsedMs = 0;
+      state.loudTurns = 0;
+      state.quietTurns = 0;
+      state.totalSwitches = 0;
+      state.secondTracker = 0;
+      state.lastActiveSide = 'loud';
+
+      dom.loudTurnsCount.textContent = '0 moves';
+      dom.quietTurnsCount.textContent = '0 moves';
+      dom.totalSwitchesDisplay.textContent = '0';
+
+      sound.playResetSound();
+      applyVisualState();
+      updateDisplay();
+    }
+
+    function swapTurn() {
+      if (state.activeTimer === 'loud') {
+        activateTimer('quiet');
+      } else if (state.activeTimer === 'quiet') {
+        activateTimer('loud');
+      } else {
+        activateTimer(state.lastActiveSide === 'loud' ? 'quiet' : 'loud');
+      }
+    }
+
+    /* ==========================================================================
+       VISUAL & DISPLAY UPDATE LOGIC
+       ========================================================================== */
+    function updateDisplay() {
+      const showDeci = state.showDeciseconds;
+
+      let displayLoudMs = state.loudElapsedMs;
+      let displayQuietMs = state.quietElapsedMs;
+
+      if (state.mode === 'count-down') {
+        const totalDurationMs = state.countdownDuration * 1000;
+        displayLoudMs = Math.max(0, totalDurationMs - state.loudElapsedMs);
+        displayQuietMs = Math.max(0, totalDurationMs - state.quietElapsedMs);
+      }
+
+      dom.loudTimeDisplay.textContent = formatTime(displayLoudMs, showDeci);
+      dom.quietTimeDisplay.textContent = formatTime(displayQuietMs, showDeci);
+
+      // Session Total and Proportions
+      const totalTimeMs = state.loudElapsedMs + state.quietElapsedMs;
+      dom.totalTimeDisplay.textContent = formatTime(totalTimeMs, false);
+
+      let loudPercent = 50;
+      let quietPercent = 50;
+
+      if (totalTimeMs > 0) {
+        loudPercent = (state.loudElapsedMs / totalTimeMs) * 100;
+        quietPercent = (state.quietElapsedMs / totalTimeMs) * 100;
+      }
+
+      dom.loudProgressBar.style.width = `${loudPercent.toFixed(1)}%`;
+      dom.quietProgressBar.style.width = `${quietPercent.toFixed(1)}%`;
+
+      const loudShareString = `${loudPercent.toFixed(1)}%`;
+      const quietShareString = `${quietPercent.toFixed(1)}%`;
+
+      dom.loudShareText.textContent = loudShareString;
+      dom.quietShareText.textContent = quietShareString;
+      dom.loudRatioLabel.textContent = loudShareString;
+      dom.quietRatioLabel.textContent = quietShareString;
+    }
+
+    function applyVisualState() {
+      const isLoud = state.activeTimer === 'loud';
+      const isQuiet = state.activeTimer === 'quiet';
+      const isPaused = state.activeTimer === null;
+
+      // Center Pause Button icon and styling
+      if (isPaused) {
+        dom.centerButtonIcon.innerHTML = `<svg class="w-7 h-7 sm:w-9 sm:h-9 text-white transition-transform group-hover:scale-110 ml-0.5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
+        dom.centerPauseBtn.classList.remove('ring-loud-500/50', 'ring-quiet-500/50');
+      } else {
+        dom.centerButtonIcon.innerHTML = `<svg class="w-7 h-7 sm:w-9 sm:h-9 text-white transition-transform group-hover:scale-110" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`;
+        if (isLoud) {
+          dom.centerPauseBtn.classList.add('ring-loud-500/50');
+          dom.centerPauseBtn.classList.remove('ring-quiet-500/50');
+        } else {
+          dom.centerPauseBtn.classList.add('ring-quiet-500/50');
+          dom.centerPauseBtn.classList.remove('ring-loud-500/50');
+        }
+      }
+
+      // Loud Card States
+      if (isLoud) {
+        dom.loudCard.classList.add('glow-loud', 'scale-[1.01]', 'bg-slate-900');
+        dom.loudCard.classList.remove('opacity-50', 'scale-[0.985]');
+        dom.loudAura.classList.remove('opacity-0');
+        dom.loudAura.classList.add('opacity-100');
+        dom.loudStatusPill.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-loud-500/20 text-loud-400 border border-loud-500/60 shadow-[0_0_15px_rgba(249,115,22,0.4)]';
+        dom.loudStatusDot.className = 'w-2 h-2 rounded-full bg-loud-500 animate-ping-slow';
+        dom.loudStatusText.textContent = 'RUNNING';
+        dom.loudTimeDisplay.classList.add('text-loud-400');
+        dom.loudTimeDisplay.classList.remove('text-white');
+      } else {
+        dom.loudCard.classList.remove('glow-loud', 'scale-[1.01]');
+        dom.loudAura.classList.add('opacity-0');
+        dom.loudAura.classList.remove('opacity-100');
+        dom.loudStatusPill.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700/60';
+        dom.loudStatusDot.className = 'w-2 h-2 rounded-full bg-slate-500';
+        dom.loudStatusText.textContent = isPaused ? 'PAUSED' : 'WAITING';
+        dom.loudTimeDisplay.classList.remove('text-loud-400');
+        dom.loudTimeDisplay.classList.add('text-white');
+
+        if (isQuiet) {
+          dom.loudCard.classList.add('opacity-60', 'scale-[0.985]');
+        } else {
+          dom.loudCard.classList.remove('opacity-60', 'scale-[0.985]');
+        }
+      }
+
+      // Quiet Card States
+      if (isQuiet) {
+        dom.quietCard.classList.add('glow-quiet', 'scale-[1.01]', 'bg-slate-900');
+        dom.quietCard.classList.remove('opacity-50', 'scale-[0.985]');
+        dom.quietAura.classList.remove('opacity-0');
+        dom.quietAura.classList.add('opacity-100');
+        dom.quietStatusPill.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-quiet-500/20 text-quiet-400 border border-quiet-500/60 shadow-[0_0_15px_rgba(6,182,212,0.4)]';
+        dom.quietStatusDot.className = 'w-2 h-2 rounded-full bg-quiet-500 animate-ping-slow';
+        dom.quietStatusText.textContent = 'RUNNING';
+        dom.quietTimeDisplay.classList.add('text-quiet-400');
+        dom.quietTimeDisplay.classList.remove('text-white');
+      } else {
+        dom.quietCard.classList.remove('glow-quiet', 'scale-[1.01]');
+        dom.quietAura.classList.add('opacity-0');
+        dom.quietAura.classList.remove('opacity-100');
+        dom.quietStatusPill.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700/60';
+        dom.quietStatusDot.className = 'w-2 h-2 rounded-full bg-slate-500';
+        dom.quietStatusText.textContent = isPaused ? 'PAUSED' : 'WAITING';
+        dom.quietTimeDisplay.classList.remove('text-quiet-400');
+        dom.quietTimeDisplay.classList.add('text-white');
+
+        if (isLoud) {
+          dom.quietCard.classList.add('opacity-60', 'scale-[0.985]');
+        } else {
+          dom.quietCard.classList.remove('opacity-60', 'scale-[0.985]');
+        }
+      }
+    }
+
+    /* ==========================================================================
+       MODAL CONTROLS & SETTINGS LOGIC
+       ========================================================================== */
+    function setMode(newMode) {
+      state.mode = newMode;
+      if (newMode === 'count-up') {
+        dom.modeCountUpBtn.className = 'py-2.5 px-4 rounded-xl border font-semibold text-sm transition-all flex items-center justify-center gap-2 bg-loud-500/20 text-loud-400 border-loud-500';
+        dom.modeCountDownBtn.className = 'py-2.5 px-4 rounded-xl border font-semibold text-sm transition-all flex items-center justify-center gap-2 bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750';
+        dom.countdownPresetsContainer.classList.add('hidden');
+        dom.currentModeLabel.textContent = 'Mode: Count-Up (Stopwatch)';
+      } else {
+        dom.modeCountDownBtn.className = 'py-2.5 px-4 rounded-xl border font-semibold text-sm transition-all flex items-center justify-center gap-2 bg-quiet-500/20 text-quiet-400 border-quiet-500';
+        dom.modeCountUpBtn.className = 'py-2.5 px-4 rounded-xl border font-semibold text-sm transition-all flex items-center justify-center gap-2 bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750';
+        dom.countdownPresetsContainer.classList.remove('hidden');
+        dom.currentModeLabel.textContent = `Mode: Count-Down (${Math.round(state.countdownDuration / 60)} min)`;
+      }
+    }
+
+    /* ==========================================================================
+       EVENT LISTENERS & BINDINGS
+       ========================================================================== */
+    function setupEvents() {
+      // Primary card clicks
+      dom.loudCard.addEventListener('click', () => activateTimer('loud'));
+      dom.quietCard.addEventListener('click', () => activateTimer('quiet'));
+
+      // Center and Bar Controls
+      dom.centerPauseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        pauseTimer();
+      });
+
+      dom.quickResetBtn.addEventListener('click', () => {
+        resetAllTimers();
+      });
+
+      dom.swapActiveBtn.addEventListener('click', swapTurn);
+
+      // Sound mute toggle
+      dom.soundToggleBtn.addEventListener('click', () => {
+        sound.enabled = !sound.enabled;
+        if (sound.enabled) {
+          dom.soundLabel.textContent = 'Audio On';
+          dom.soundIconWrapper.className = 'text-emerald-400';
+          dom.soundIconWrapper.innerHTML = `<svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
+          sound.initContext();
+        } else {
+          dom.soundLabel.textContent = 'Muted';
+          dom.soundIconWrapper.className = 'text-rose-400';
+          dom.soundIconWrapper.innerHTML = `<svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`;
+        }
+      });
+
+      // Ticking toggle
+      dom.tickToggleBtn.addEventListener('click', () => {
+        sound.ticking = !sound.ticking;
+        if (sound.ticking) {
+          dom.tickText.textContent = 'Ticking: On';
+          dom.tickToggleBtn.classList.add('border-amber-500/60', 'text-amber-300');
+          sound.initContext();
+        } else {
+          dom.tickText.textContent = 'Ticking: Off';
+          dom.tickToggleBtn.classList.remove('border-amber-500/60', 'text-amber-300');
+        }
+      });
+
+      // Keyboard Controls
+      window.addEventListener('keydown', (e) => {
+        // Ignore key handling if typing inside input boxes
+        if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+          return;
+        }
+
+        const key = e.key.toLowerCase();
+
+        if (e.code === 'Space') {
+          e.preventDefault();
+          pauseTimer();
+        } else if (e.key === 'ArrowLeft' || key === 'a') {
+          e.preventDefault();
+          activateTimer('loud');
+        } else if (e.key === 'ArrowRight' || key === 'l') {
+          e.preventDefault();
+          activateTimer('quiet');
+        } else if (key === 'r') {
+          e.preventDefault();
+          resetAllTimers();
+        } else if (key === 'm') {
+          dom.soundToggleBtn.click();
+        } else if (key === '?') {
+          dom.helpModal.classList.remove('hidden');
+          dom.helpModal.classList.add('flex');
+        } else if (e.key === 'Escape') {
+          dom.settingsModal.classList.add('hidden');
+          dom.helpModal.classList.add('hidden');
+          dom.timeExpiredModal.classList.add('hidden');
+        }
+      });
+
+      // Settings Modal toggles
+      dom.settingsModalBtn.addEventListener('click', () => {
+        dom.settingsModal.classList.remove('hidden');
+        dom.settingsModal.classList.add('flex');
+      });
+      dom.closeSettingsBtn.addEventListener('click', () => {
+        dom.settingsModal.classList.add('hidden');
+        dom.settingsModal.classList.remove('flex');
+      });
+
+      dom.modeCountUpBtn.addEventListener('click', () => setMode('count-up'));
+      dom.modeCountDownBtn.addEventListener('click', () => setMode('count-down'));
+
+      // Countdown Preset Buttons
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.preset-btn').forEach(b => {
+            b.classList.remove('border-loud-500', 'bg-loud-500/20', 'text-loud-400');
+          });
+          btn.classList.add('border-loud-500', 'bg-loud-500/20', 'text-loud-400');
+          const dur = parseInt(btn.getAttribute('data-duration'), 10);
+          state.countdownDuration = dur;
+          dom.customMinutesInput.value = Math.round(dur / 60);
+        });
+      });
+
+      dom.customMinutesInput.addEventListener('input', (e) => {
+        const val = Math.max(1, parseInt(e.target.value, 10) || 5);
+        state.countdownDuration = val * 60;
+        document.querySelectorAll('.preset-btn').forEach(b => {
+          b.classList.remove('border-loud-500', 'bg-loud-500/20', 'text-loud-400');
+        });
+      });
+
+      dom.precisionToggle.addEventListener('change', (e) => {
+        state.showDeciseconds = e.target.checked;
+        updateDisplay();
+      });
+
+      dom.applySettingsBtn.addEventListener('click', () => {
+        dom.settingsModal.classList.add('hidden');
+        dom.settingsModal.classList.remove('flex');
+        resetAllTimers();
+        if (state.mode === 'count-down') {
+          dom.currentModeLabel.textContent = `Mode: Count-Down (${Math.round(state.countdownDuration / 60)} min)`;
+        } else {
+          dom.currentModeLabel.textContent = 'Mode: Count-Up (Stopwatch)';
+        }
+      });
+
+      // Help Modal Toggles
+      dom.helpModalBtn.addEventListener('click', () => {
+        dom.helpModal.classList.remove('hidden');
+        dom.helpModal.classList.add('flex');
+      });
+      dom.closeHelpBtn.addEventListener('click', () => {
+        dom.helpModal.classList.add('hidden');
+        dom.helpModal.classList.remove('flex');
+      });
+      dom.understoodHelpBtn.addEventListener('click', () => {
+        dom.helpModal.classList.add('hidden');
+        dom.helpModal.classList.remove('flex');
+      });
+
+      // Expired modal buttons
+      dom.dismissExpiredBtn.addEventListener('click', () => {
+        dom.timeExpiredModal.classList.add('hidden');
+        dom.timeExpiredModal.classList.remove('flex');
+      });
+      dom.resetFromExpiredBtn.addEventListener('click', () => {
+        dom.timeExpiredModal.classList.add('hidden');
+        dom.timeExpiredModal.classList.remove('flex');
+        resetAllTimers();
+      });
+
+      // Prevent modal back clicks from propagating
+      [dom.settingsModal, dom.helpModal, dom.timeExpiredModal].forEach(modal => {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+          }
+        });
+      });
+    }
+
+    /* ==========================================================================
+       INITIALIZATION
+       ========================================================================== */
+    window.addEventListener('load', () => {
+      setupEvents();
+      startTimerLoop();
+      updateDisplay();
+      applyVisualState();
+    });
+  </script>
+</body>
+</html>
