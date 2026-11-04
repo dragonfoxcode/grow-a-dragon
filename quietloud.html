@@ -498,7 +498,7 @@
           <div class="h-5 rounded-full bg-violet-950/80 border-2 border-violet-700 overflow-hidden p-0.5">
             <div id="dragonXpFill" class="h-full rounded-full bg-gradient-to-r from-quiet-500 to-quiet-300" style="width: 0%;"></div>
           </div>
-          <p id="dragonHint" class="text-xs sm:text-sm text-slate-300 mt-2 text-center font-semibold">Every 5 quiet minutes grows your dragon. 1 loud minute takes 5 quiet minutes away!</p>
+          <p id="dragonHint" class="text-xs sm:text-sm text-slate-300 mt-2 text-center font-semibold">Every 5 quiet minutes grows your dragon. 1 minute of Loud Time shrinks it a level!</p>
         </div>
       </section>
 
@@ -642,7 +642,7 @@
     <div class="mt-6 bg-violet-900/70 border border-violet-800 rounded-3xl p-5 sm:p-6 shadow-2xl">
       <div class="flex items-center justify-between mb-3">
         <h3 class="font-display font-bold text-base text-slate-100">🐉 Dragon Journey This Session</h3>
-        <span class="hidden sm:inline text-xs text-slate-400">Grows every 5 quiet minutes · 1 loud minute takes 5 quiet minutes away</span>
+        <span id="dragonRulesShort" class="hidden sm:inline text-xs text-slate-400">Grows every 5 quiet min · shrinks after 1 loud min</span>
       </div>
       <ul id="milestoneList" class="flex flex-col gap-2 max-h-56 overflow-y-auto text-sm"></ul>
     </div>
@@ -830,6 +830,31 @@
           <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">🎨 Color Theme</label>
           <div id="themePicker" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
           <p class="text-[11px] text-slate-500 mt-2">Changes right away and is remembered on this computer.</p>
+        </div>
+
+        <!-- Dragon level timing (buttons are built by renderDragonSettings) -->
+        <div class="p-3.5 rounded-2xl bg-violet-950 border border-violet-800 space-y-3">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-quiet-300">🐉 Dragon Levels</span>
+            <p class="text-[11px] text-slate-400">Changes right away (the dragon keeps its level) and is remembered on this computer.</p>
+          </div>
+          <div>
+            <div class="text-sm font-semibold text-white mb-1.5">Quiet Time to grow one level</div>
+            <div id="dragonQuietPicker" class="grid grid-cols-6 gap-1.5"></div>
+          </div>
+          <div>
+            <div class="text-sm font-semibold text-white mb-1.5">Loud Time to shrink one level</div>
+            <div id="dragonLoudPicker" class="grid grid-cols-5 gap-1.5"></div>
+          </div>
+          <div>
+            <div class="text-sm font-semibold text-white">Celebration break after a level-up</div>
+            <div class="text-[11px] text-slate-400 mb-1.5">Cheering won't shrink the dragon during this time.</div>
+            <div id="dragonGracePicker" class="grid grid-cols-4 gap-1.5"></div>
+          </div>
+          <div class="flex items-center justify-between gap-2 pt-1">
+            <p id="dragonRulesSummary" class="text-[11px] text-slate-400"></p>
+            <button id="dragonDefaultsBtn" type="button" class="shrink-0 text-[11px] px-2.5 py-1 rounded-lg bg-violet-800 hover:bg-violet-750 text-slate-300 border border-violet-700 font-semibold">Reset to defaults</button>
+          </div>
         </div>
 
         <!-- Microphone Auto-Switch Config -->
@@ -1443,7 +1468,8 @@
       secondTracker: 0,
 
       // Class dragon: Quiet Time adds power, Loud Time drains it 5x as fast
-      dragonXpMs: 0,
+      dragonProgress: 0, // in levels, e.g. 2.4 = Baby Dragon, 40% to the next level
+      dragonGraceMs: 0,  // celebration time left after a level-up (noise doesn't shrink the dragon)
       dragonLevel: 0,
       dragonBest: 0,
       milestones: [], // { side, icon, label, clock } newest first
@@ -1452,13 +1478,26 @@
       classLogs: []
     };
 
-    // Dragon levels: one level per 5 minutes of Quiet Time.
-    // Each second of Loud Time removes 5 seconds, so 1 loud minute = 1 level lost.
-    const DRAGON_LEVEL_MS = 5 * 60 * 1000;
-    const DRAGON_LOUD_DRAIN = 5;
+    // Dragon levels: grows one level per X quiet minutes, shrinks one level per Y loud minutes.
+    // Teachers can change X, Y and the celebration grace period in Settings (saved on this computer).
     const DRAGON_MAX_LEVEL = 5;
-    // Past Mega, the bar keeps filling for 5 more minutes as a "Mega power" cushion
-    const DRAGON_MAX_XP = (DRAGON_MAX_LEVEL + 1) * DRAGON_LEVEL_MS;
+    // Past Mega, the bar fills one more level's worth as a "Mega power" cushion
+    const DRAGON_MAX_PROGRESS = DRAGON_MAX_LEVEL + 1;
+    const DRAGON_DEFAULTS = { quietMin: 5, loudMin: 1, graceSec: 30 };
+    const DRAGON_OPTIONS = {
+      quietMin: [1, 2, 3, 5, 10, 15],
+      loudMin: [0.5, 1, 2, 3, 5],
+      graceSec: [0, 15, 30, 60],
+    };
+    const dragonSettings = { ...DRAGON_DEFAULTS };
+    try {
+      const saved = JSON.parse(localStorage.getItem('quietloud-dragon') || '{}');
+      Object.keys(DRAGON_DEFAULTS).forEach(k => {
+        if (DRAGON_OPTIONS[k].includes(saved[k])) dragonSettings[k] = saved[k];
+      });
+    } catch (e) {}
+    const quietLevelMs = () => dragonSettings.quietMin * 60000;
+    const loudLevelMs = () => dragonSettings.loudMin * 60000;
 
     // Kept outside the mic meter so slider/boost changes made before the mic starts aren't lost
     const micSettings = { threshold: 30, gainBoost: 2.5 };
@@ -1626,10 +1665,16 @@
         if (state.activeTimer) {
           if (state.activeTimer === 'loud') {
             state.loudElapsedMs += delta;
-            state.dragonXpMs = Math.max(0, state.dragonXpMs - delta * DRAGON_LOUD_DRAIN);
+            if (state.dragonGraceMs <= 0) {
+              state.dragonProgress = Math.max(0, state.dragonProgress - delta / loudLevelMs());
+            }
           } else if (state.activeTimer === 'quiet') {
             state.quietElapsedMs += delta;
-            state.dragonXpMs = Math.min(DRAGON_MAX_XP, state.dragonXpMs + delta);
+            state.dragonProgress = Math.min(DRAGON_MAX_PROGRESS, state.dragonProgress + delta / quietLevelMs());
+          }
+          if (state.dragonGraceMs > 0) {
+            state.dragonGraceMs -= delta;
+            if (state.dragonGraceMs <= 0) { state.dragonGraceMs = 0; updateDragonMood(); }
           }
 
           state.secondTracker += delta;
@@ -1725,7 +1770,8 @@
       state.secondTracker = 0;
       state.lastActiveSide = 'loud';
 
-      state.dragonXpMs = 0;
+      state.dragonProgress = 0;
+      state.dragonGraceMs = 0;
       state.dragonLevel = 0;
       state.dragonBest = 0;
       state.milestones = [];
@@ -1911,7 +1957,7 @@
     ];
 
     function checkDragonLevel() {
-      const target = Math.min(DRAGON_MAX_LEVEL, Math.floor(state.dragonXpMs / DRAGON_LEVEL_MS));
+      const target = Math.min(DRAGON_MAX_LEVEL, Math.floor(state.dragonProgress));
       if (target === state.dragonLevel) return;
 
       const grew = target > state.dragonLevel;
@@ -1925,6 +1971,11 @@
         replayAnimation(dom.dragonWrap, 'dg-evolve', 1200);
         stageFlash();
         spawnStageParticles(['✨', '⭐', '💫'], target === DRAGON_MAX_LEVEL ? 14 : 8);
+        // Give the class a moment to cheer without shrinking the dragon
+        if (dragonSettings.graceSec > 0) {
+          state.dragonGraceMs = dragonSettings.graceSec * 1000;
+          updateDragonMood();
+        }
         if (firstTime) {
           sound.playLevelUp(target === DRAGON_MAX_LEVEL);
           addMilestone('quiet', '🐉', `Level ${target + 1}: ${lvl.name}`);
@@ -1989,39 +2040,45 @@
     }
 
     function updateDragonBar() {
-      const xp = state.dragonXpMs;
+      const p = state.dragonProgress;
       const level = state.dragonLevel;
+      const inGrace = state.dragonGraceMs > 0;
       const isLoud = state.activeTimer === 'loud';
+      const draining = isLoud && !inGrace;
       const isMega = level === DRAGON_MAX_LEVEL;
-      const levelStart = level * DRAGON_LEVEL_MS;
-      const pct = Math.max(0, Math.min(100, ((xp - levelStart) / DRAGON_LEVEL_MS) * 100));
+      const pct = Math.max(0, Math.min(100, (p - level) * 100));
 
       dom.dragonXpFill.style.width = `${pct.toFixed(2)}%`;
-      dom.dragonXpFill.classList.toggle('xp-draining', isLoud);
+      dom.dragonXpFill.classList.toggle('xp-draining', draining);
 
       let label, time;
-      if (isLoud) {
+      if (inGrace) {
+        label = '🎉 Celebration time! Noise is free';
+        time = `${formatShort(state.dragonGraceMs)} left`;
+      } else if (draining) {
         label = '⚠️ Too loud! Power draining…';
-        if (level > 0) time = `shrinks in ${formatShort((xp - levelStart) / DRAGON_LOUD_DRAIN)}`;
-        else time = xp > 0 ? 'egg cooling down' : '';
+        if (level > 0) time = `shrinks in ${formatShort((p - level) * loudLevelMs())}`;
+        else time = p > 0 ? 'egg cooling down' : '';
       } else if (isMega) {
         label = '⚡ Mega power';
-        time = pct >= 100 ? 'FULL!' : `${formatShort(DRAGON_MAX_XP - xp)} to full`;
+        time = pct >= 100 ? 'FULL!' : `${formatShort((DRAGON_MAX_PROGRESS - p) * quietLevelMs())} to full`;
       } else {
         label = `Next: ${DRAGON_LEVELS[level + 1].name}`;
-        time = `${formatShort((level + 1) * DRAGON_LEVEL_MS - xp)} of quiet`;
+        time = `${formatShort((level + 1 - p) * quietLevelMs())} of quiet`;
       }
       if (dom.dragonNextLabel.textContent !== label) dom.dragonNextLabel.textContent = label;
       if (dom.dragonNextTime.textContent !== time) dom.dragonNextTime.textContent = time;
-      dom.dragonNextLabel.classList.toggle('text-loud-300', isLoud);
-      dom.dragonNextLabel.classList.toggle('text-quiet-200', !isLoud);
+      dom.dragonNextLabel.classList.toggle('text-pink-300', inGrace);
+      dom.dragonNextLabel.classList.toggle('text-loud-300', draining);
+      dom.dragonNextLabel.classList.toggle('text-quiet-200', !inGrace && !draining);
     }
 
     function updateDragonMood() {
       const wrap = dom.dragonWrap;
-      const mode = state.activeTimer === 'loud' ? 'loud' : state.activeTimer === 'quiet' ? 'quiet' : 'paused';
+      let mode = state.activeTimer === 'loud' ? 'loud' : state.activeTimer === 'quiet' ? 'quiet' : 'paused';
+      if (mode === 'loud' && state.dragonGraceMs > 0) mode = 'celebrate';
       wrap.classList.toggle('is-loud', mode === 'loud');
-      wrap.classList.toggle('is-quiet', mode === 'quiet');
+      wrap.classList.toggle('is-quiet', mode === 'quiet' || mode === 'celebrate');
       wrap.classList.toggle('is-paused', mode === 'paused');
       dom.stageLoudTint.classList.toggle('opacity-0', mode !== 'loud');
       dom.stageLoudTint.classList.toggle('opacity-100', mode === 'loud');
@@ -2032,6 +2089,9 @@
       if (mode === 'loud') {
         dom.dragonMood.className = base + 'bg-loud-500 text-white border-loud-400';
         dom.dragonMood.textContent = '😟 Too loud!';
+      } else if (mode === 'celebrate') {
+        dom.dragonMood.className = base + 'bg-pink-500/20 text-pink-300 border-pink-500';
+        dom.dragonMood.textContent = '🎉 Celebrating!';
       } else if (mode === 'quiet') {
         dom.dragonMood.className = base + 'bg-quiet-500/20 text-quiet-200 border-quiet-400';
         dom.dragonMood.textContent = state.dragonLevel === DRAGON_MAX_LEVEL ? '⚡ Powered up!' : '😊 Growing';
@@ -2308,6 +2368,7 @@
       };
 
       state.classLogs.unshift(newLog);
+      saveLogs();
       renderLogsTable();
 
       dom.saveSessionBtn.innerHTML = '✅ Saved!';
@@ -2317,6 +2378,18 @@
       setTimeout(() => {
         dom.saveSessionBtn.innerHTML = '💾 Save Current Session to Log';
       }, 1600);
+    }
+
+    // The class log is saved in this browser so it survives reloads
+    const LOGS_KEY = 'quietloud-logs';
+    function loadLogs() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(LOGS_KEY) || '[]');
+        if (Array.isArray(saved)) state.classLogs = saved;
+      } catch (e) {}
+    }
+    function saveLogs() {
+      try { localStorage.setItem(LOGS_KEY, JSON.stringify(state.classLogs)); } catch (e) {}
     }
 
     function renderLogsTable() {
@@ -2593,7 +2666,10 @@
         dom.logsModal.classList.remove('flex');
       });
       dom.clearLogsBtn.addEventListener('click', () => {
+        if (state.classLogs.length === 0) return;
+        if (!confirm('Delete all saved classes from the log? This can\'t be undone.')) return;
         state.classLogs = [];
+        saveLogs();
         renderLogsTable();
       });
 
@@ -2637,6 +2713,11 @@
       dom.precisionToggle.addEventListener('change', (e) => {
         state.showDeciseconds = e.target.checked;
         updateDisplay();
+      });
+
+      document.getElementById('dragonDefaultsBtn').addEventListener('click', () => {
+        Object.entries(DRAGON_DEFAULTS).forEach(([k, v]) => { dragonSettings[k] = v; });
+        setDragonSetting('quietMin', DRAGON_DEFAULTS.quietMin);
       });
 
       dom.applySettingsBtn.addEventListener('click', () => {
@@ -2693,7 +2774,10 @@
       updateDisplay();
       applyVisualState();
       setNoiseThreshold(30);
+      loadLogs();
+      renderLogsTable();
       renderMilestones();
+      renderDragonSettings();
       renderDragon();
       setTheme(document.documentElement.dataset.theme || 'galaxy', false);
       setAppearance(document.documentElement.dataset.appearance || 'auto', false);
@@ -2707,6 +2791,52 @@
         });
       }
     });
+
+    /* ==========================================================================
+       DRAGON SETTINGS (grow / shrink timing and celebration break)
+       ========================================================================== */
+    const minutesText = (m) => m < 1 ? `${m * 60} seconds` : `${m} minute${m === 1 ? '' : 's'}`;
+    const dragonOptionLabel = {
+      quietMin: (v) => `${v} min`,
+      loudMin: (v) => v < 1 ? `${v * 60} sec` : `${v} min`,
+      graceSec: (v) => v === 0 ? 'Off' : v === 60 ? '1 min' : `${v} sec`,
+    };
+
+    function setDragonSetting(key, value) {
+      dragonSettings[key] = value;
+      try { localStorage.setItem('quietloud-dragon', JSON.stringify(dragonSettings)); } catch (e) {}
+      if (key === 'graceSec' && state.dragonGraceMs > value * 1000) {
+        state.dragonGraceMs = value * 1000;
+        updateDragonMood();
+      }
+      renderDragonSettings();
+      updateDragonBar();
+    }
+
+    function renderDragonSettings() {
+      const pickers = { quietMin: 'dragonQuietPicker', loudMin: 'dragonLoudPicker', graceSec: 'dragonGracePicker' };
+      Object.entries(pickers).forEach(([key, id]) => {
+        const el = document.getElementById(id);
+        el.innerHTML = DRAGON_OPTIONS[key].map(v => {
+          const active = dragonSettings[key] === v;
+          return `<button type="button" data-value="${v}" class="py-1.5 rounded-lg border-2 text-xs font-bold transition ${active
+            ? 'bg-quiet-500/20 text-quiet-200 border-quiet-400'
+            : 'bg-violet-800 text-slate-300 border-violet-700 hover:bg-violet-750'}">${dragonOptionLabel[key](v)}</button>`;
+        }).join('');
+        el.querySelectorAll('button').forEach(btn => {
+          btn.addEventListener('click', () => setDragonSetting(key, Number(btn.dataset.value)));
+        });
+      });
+
+      const q = dragonSettings.quietMin, l = dragonSettings.loudMin, g = dragonSettings.graceSec;
+      const loudPhrase = minutesText(l);
+      dom.dragonHint.textContent = `Every ${q === 1 ? 'quiet minute' : `${q} quiet minutes`} grows your dragon. ${loudPhrase[0].toUpperCase() + loudPhrase.slice(1)} of Loud Time shrinks it a level!`;
+      const graceText = g === 0 ? 'no celebration break' : `${dragonOptionLabel.graceSec(g)} celebration break`;
+      document.getElementById('dragonRulesShort').textContent =
+        `Grows every ${q} quiet min · shrinks after ${dragonOptionLabel.loudMin(l)} loud · ${graceText}`;
+      document.getElementById('dragonRulesSummary').textContent =
+        `Mega Dragon takes ${q * DRAGON_MAX_LEVEL} quiet minutes.`;
+    }
 
     /* ==========================================================================
        THEMES (color data lives in THEMES at the top of the page)
