@@ -1710,24 +1710,29 @@
       dom.timeExpiredModal.classList.add('flex');
     }
 
-    function activateTimer(target, autoTriggered = false) {
+    // countTurn = false when resuming from pause, so un-pausing doesn't add a turn
+    function activateTimer(target, autoTriggered = false, countTurn = true) {
       // If target timer is already running, keep it running (no unintended swapping)
       if (state.activeTimer === target) {
         return;
       }
 
       const isSwitchingSides = state.activeTimer !== null && state.activeTimer !== target;
-      
+
       if (target === 'loud') {
-        state.loudTurns++;
-        dom.loudTurnsCount.textContent = state.loudTurns;
+        if (countTurn) {
+          state.loudTurns++;
+          dom.loudTurnsCount.textContent = state.loudTurns;
+        }
         sound.playWahWah(); // Comedic "wah-wah" slide sound
         if (micMeter) micMeter.resetSilence();
         replayAnimation(dom.loudMascot, 'mascot-shake');
         spawnStageParticles(['💢', '💦'], 4);
       } else {
-        state.quietTurns++;
-        dom.quietTurnsCount.textContent = state.quietTurns;
+        if (countTurn) {
+          state.quietTurns++;
+          dom.quietTurnsCount.textContent = state.quietTurns;
+        }
         sound.playSoothingChime(); // Gentle calming harmonic chime
       }
 
@@ -1746,8 +1751,10 @@
 
     function pauseTimer() {
       if (state.activeTimer === null) {
-        // Resuming always goes back to Quiet Time
-        activateTimer('quiet');
+        // Resuming always goes back to Quiet Time. It only counts as a turn
+        // if this is the very first start (nothing has run yet).
+        const firstStart = state.loudTurns === 0 && state.quietTurns === 0;
+        activateTimer('quiet', false, firstStart);
         return;
       }
 
