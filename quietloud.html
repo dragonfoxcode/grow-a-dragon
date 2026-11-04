@@ -670,6 +670,21 @@
         <button id="closeCalibrateBtn" class="flex items-center gap-1.5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-violet-800 transition"><span class="kbd" title="Press Esc to close">Esc</span><span>✕</span></button>
       </div>
 
+      <!-- Mic Auto-Switch on/off -->
+      <div class="p-3 rounded-2xl bg-violet-950 border border-violet-800 flex items-center justify-between gap-3">
+        <div>
+          <div class="text-sm font-bold text-white">Mic Auto-Switch</div>
+          <p class="text-[11px] text-slate-400">Switch to Loud Time when the room gets noisy</p>
+        </div>
+        <button id="calibMicSwitch" type="button" role="switch" aria-checked="false" aria-label="Mic Auto-Switch"
+          class="flex items-center gap-2 shrink-0 text-xs font-bold text-slate-300">
+          <span id="calibMicSwitchLabel">Off</span>
+          <span id="calibMicSwitchTrack" class="relative w-12 h-7 rounded-full bg-violet-800 border border-violet-700 transition">
+            <span id="calibMicSwitchKnob" class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-slate-400 shadow transition-all"></span>
+          </span>
+        </button>
+      </div>
+
       <!-- Live Volume VU in Modal -->
       <div class="p-3 rounded-2xl bg-violet-950 border border-violet-800">
         <div class="flex justify-between text-xs font-semibold mb-1 text-slate-300">
@@ -920,6 +935,22 @@
         this.ctx = null;
         this.enabled = true;
         this.ticking = false;
+        // performance.now() time when the last app sound (plus its echo buffer) ends,
+        // so the mic can ignore the app's own sounds
+        this.busyUntil = 0;
+      }
+
+      // Stop an oscillator at audio time t and remember that the app is making noise until then.
+      // tail = extra seconds to cover room echo and mic smoothing
+      stopAt(osc, t, tail = 0.5) {
+        osc.stop(t);
+        const endsInMs = (t - this.ctx.currentTime + tail) * 1000;
+        this.busyUntil = Math.max(this.busyUntil, performance.now() + endsInMs);
+      }
+
+      // True while one of the app's own sounds is playing
+      isPlaying() {
+        return performance.now() < this.busyUntil;
       }
 
       initContext() {
@@ -973,7 +1004,7 @@
           gain.connect(this.ctx.destination);
 
           osc.start(now + start);
-          osc.stop(now + start + dur + 0.05);
+          this.stopAt(osc, now + start + dur + 0.05);
         });
       }
 
@@ -1005,7 +1036,7 @@
           gain.connect(this.ctx.destination);
 
           osc.start(startTime);
-          osc.stop(startTime + duration + 0.05);
+          this.stopAt(osc, startTime + duration + 0.05);
         });
       }
 
@@ -1030,7 +1061,7 @@
         gain.connect(this.ctx.destination);
 
         osc.start(now);
-        osc.stop(now + 0.035);
+        this.stopAt(osc, now + 0.035, 0.1);
       }
 
       // Pause click tone
@@ -1054,7 +1085,7 @@
         gain.connect(this.ctx.destination);
 
         osc.start(now);
-        osc.stop(now + 0.13);
+        this.stopAt(osc, now + 0.13);
       }
 
       // Reset swoosh tone
@@ -1078,7 +1109,7 @@
         gain.connect(this.ctx.destination);
 
         osc.start(now);
-        osc.stop(now + 0.16);
+        this.stopAt(osc, now + 0.16);
       }
 
       // Short "boop-boop" reminder each time Loud Time passes another minute
@@ -1100,7 +1131,7 @@
           osc.connect(gain);
           gain.connect(this.ctx.destination);
           osc.start(now + offset);
-          osc.stop(now + offset + 0.16);
+          this.stopAt(osc, now + offset + 0.16);
         });
       }
 
@@ -1126,7 +1157,7 @@
           osc.connect(gain);
           gain.connect(this.ctx.destination);
           osc.start(start);
-          osc.stop(start + dur + 0.05);
+          this.stopAt(osc, start + dur + 0.05);
         });
       }
 
@@ -1151,7 +1182,7 @@
           osc.connect(gain);
           gain.connect(this.ctx.destination);
           osc.start(start);
-          osc.stop(start + dur + 0.05);
+          this.stopAt(osc, start + dur + 0.05);
         };
         run.forEach((f, i) => play(f, now + i * 0.1, 0.25, 0.14, 'triangle'));
         chord.forEach(f => play(f, now + 0.45, isMega ? 2.0 : 1.3, 0.08, 'sine'));
@@ -1181,7 +1212,7 @@
         filter.connect(gain);
         gain.connect(this.ctx.destination);
         osc.start(now);
-        osc.stop(now + 0.9);
+        this.stopAt(osc, now + 0.9);
       }
 
       // Countdown expired alarm
@@ -1205,7 +1236,7 @@
           gain.connect(this.ctx.destination);
 
           osc.start(now + offset);
-          osc.stop(now + offset + 0.19);
+          this.stopAt(osc, now + offset + 0.19);
         });
       }
     }
@@ -1374,7 +1405,12 @@
         // Automatic switching: a quick burst of noise starts Loud Time,
         // but it takes 10 seconds of unbroken quiet to return to Quiet Time.
         const now = performance.now();
-        if (scaled >= this.threshold) {
+        if (sound.isPlaying()) {
+          // The app's own chime or fanfare is playing: don't count it as class noise.
+          // The 10-second quiet countdown keeps going through it.
+          this.loudConsecutiveCount = 0;
+          if (this.quietSince !== null && this.onSilenceProgress) this.onSilenceProgress(now - this.quietSince);
+        } else if (scaled >= this.threshold) {
           this.loudConsecutiveCount++;
           this.quietSince = null;
           if (this.onSilenceProgress) this.onSilenceProgress(0);
@@ -1548,6 +1584,10 @@
       thresholdMarker: document.getElementById('thresholdMarker'),
       thresholdNotice: document.getElementById('thresholdNotice'),
       modalMicToggle: document.getElementById('modalMicToggle'),
+      calibMicSwitch: document.getElementById('calibMicSwitch'),
+      calibMicSwitchLabel: document.getElementById('calibMicSwitchLabel'),
+      calibMicSwitchTrack: document.getElementById('calibMicSwitchTrack'),
+      calibMicSwitchKnob: document.getElementById('calibMicSwitchKnob'),
       micErrorBanner: document.getElementById('micErrorBanner'),
       micErrorMessage: document.getElementById('micErrorMessage'),
       dismissMicError: document.getElementById('dismissMicError'),
@@ -2369,20 +2409,28 @@
       dom.calibrateModal.classList.remove('hidden');
       dom.calibrateModal.classList.add('flex');
       
-      // Ensure mic audio context is initiated so user sees live meter right away
-      initMicMeterInstance();
-      if (!micMeter.isActive) {
-        micMeter.start().then(res => {
-          if (res.ok) {
-            dom.micMeterContainer.classList.remove('hidden');
-            dom.micBtnLabel.textContent = 'Mic Auto: ON';
-            dom.micStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
-            dom.modalMicToggle.checked = true;
-          } else {
-            dom.calibrationStatusMessage.textContent = "Mic permission needed. Please allow microphone in browser.";
-          }
-        });
-      }
+      // The mic stays as it was; the Mic Auto-Switch in the window turns it on or off
+      syncMicUI();
+    }
+
+    // Make every mic control (top button, settings checkbox, calibration switch) match the mic
+    function syncMicUI() {
+      const on = !!(micMeter && micMeter.isActive);
+      dom.micMeterContainer.classList.toggle('hidden', !on);
+      dom.micBtnLabel.textContent = on ? 'Mic Auto: ON' : 'Mic Auto: Off';
+      dom.micStatusDot.className = `w-2.5 h-2.5 rounded-full ${on ? 'bg-emerald-400' : 'bg-slate-500'}`;
+      dom.modalMicToggle.checked = on;
+
+      dom.calibMicSwitch.setAttribute('aria-checked', String(on));
+      dom.calibMicSwitchLabel.textContent = on ? 'On' : 'Off';
+      dom.calibMicSwitchTrack.classList.toggle('bg-emerald-500', on);
+      dom.calibMicSwitchTrack.classList.toggle('border-emerald-400', on);
+      dom.calibMicSwitchTrack.classList.toggle('bg-violet-800', !on);
+      dom.calibMicSwitchTrack.classList.toggle('border-violet-700', !on);
+      dom.calibMicSwitchKnob.classList.toggle('left-0.5', !on);
+      dom.calibMicSwitchKnob.classList.toggle('bg-slate-400', !on);
+      dom.calibMicSwitchKnob.classList.toggle('left-6', on);
+      dom.calibMicSwitchKnob.classList.toggle('bg-white', on);
     }
 
     function initMicMeterInstance() {
@@ -2412,20 +2460,14 @@
 
       if (!micMeter.isActive) {
         const res = await micMeter.start();
-        if (res.ok) {
-          dom.micMeterContainer.classList.remove('hidden');
-          dom.micBtnLabel.textContent = 'Mic Auto: ON';
-          dom.micStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
-          dom.modalMicToggle.checked = true;
+        if (!res.ok) {
+          dom.calibrationStatusMessage.textContent = "Mic permission needed. Please allow microphone in browser.";
         }
       } else {
         micMeter.stop();
         updateSilenceBox(0);
-        dom.micMeterContainer.classList.add('hidden');
-        dom.micBtnLabel.textContent = 'Mic Auto: Off';
-        dom.micStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-slate-500';
-        dom.modalMicToggle.checked = false;
       }
+      syncMicUI();
     }
 
     /* ==========================================================================
@@ -2471,7 +2513,9 @@
       });
 
       // Mic buttons
-      dom.micToggleBtn.addEventListener('click', toggleMicrophoneDetector);
+      // The top Mic button opens the calibration window, which holds the on/off switch
+      dom.micToggleBtn.addEventListener('click', openCalibrationDialog);
+      dom.calibMicSwitch.addEventListener('click', toggleMicrophoneDetector);
       dom.modalMicToggle.addEventListener('change', toggleMicrophoneDetector);
 
       // Calibration Modal Triggers
@@ -2533,6 +2577,7 @@
         const avg = await micMeter.sampleLevel(3000, (remaining) => {
           dom.sampleQuietBtn.textContent = `Sampling (${remaining}s)...`;
         });
+        syncMicUI(); // sampling turns the mic on if it was off
 
         dom.sampleQuietBtn.disabled = false;
         dom.sampleQuietBtn.textContent = "🤫 Sample Quiet (3s)";
@@ -2560,6 +2605,7 @@
         const avg = await micMeter.sampleLevel(3000, (remaining) => {
           dom.sampleTalkingBtn.textContent = `Sampling (${remaining}s)...`;
         });
+        syncMicUI(); // sampling turns the mic on if it was off
 
         dom.sampleTalkingBtn.disabled = false;
         dom.sampleTalkingBtn.textContent = "🗣️ Sample Talk (3s)";
