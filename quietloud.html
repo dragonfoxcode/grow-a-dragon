@@ -886,9 +886,9 @@
             <div id="dragonLoudPicker" class="grid grid-cols-5 gap-1.5"></div>
           </div>
           <div>
-            <div class="text-sm font-semibold text-white">Celebration break after a level-up</div>
-            <div class="text-[11px] text-slate-400 mb-1.5">Cheering won't shrink the dragon during this time.</div>
-            <div id="dragonGracePicker" class="grid grid-cols-4 gap-1.5"></div>
+            <div class="text-sm font-semibold text-white">Grace period after a level-up</div>
+            <div class="text-[11px] text-slate-400 mb-1.5">A short burst of excitement right after a level-up won't shrink the dragon. Nothing about this is shown on screen.</div>
+            <div id="dragonGracePicker" class="grid grid-cols-5 gap-1.5"></div>
           </div>
           <div class="flex items-center justify-between gap-2 pt-1">
             <p id="dragonRulesSummary" class="text-[11px] text-slate-400"></p>
@@ -1543,7 +1543,7 @@
 
       // Class dragon: Quiet Time adds power, Loud Time drains it 5x as fast
       dragonProgress: 0, // in levels, e.g. 2.4 = Baby Dragon, 40% to the next level
-      dragonGraceMs: 0,  // celebration time left after a level-up (noise doesn't shrink the dragon)
+      dragonGraceMs: 0,  // hidden grace period after a level-up: noise doesn't shrink the dragon (nothing shown)
       dragonHistory: [], // [side, ms] stretches since the last reset, so the dragon can be recalculated
       dragonLevel: 0,
       dragonBest: 0,
@@ -1555,12 +1555,12 @@
     };
 
     // Dragon levels: grows one level per X quiet minutes, shrinks one level per Y loud minutes.
-    // Teachers can change X, Y and the celebration grace period in Settings (saved on this computer).
-    const DRAGON_DEFAULTS = { quietMin: 5, loudMin: 1, graceSec: 30 };
+    // Teachers can change X, Y and the hidden grace period in Settings (saved on this computer).
+    const DRAGON_DEFAULTS = { quietMin: 5, loudMin: 1, graceSec: 10 };
     const DRAGON_OPTIONS = {
       quietMin: [1, 2, 3, 5, 10, 15],
       loudMin: [0.5, 1, 2, 3, 5],
-      graceSec: [0, 15, 30, 60],
+      graceSec: [0, 5, 10, 15, 20],
     };
     const dragonSettings = { ...DRAGON_DEFAULTS };
     try {
@@ -2106,7 +2106,7 @@
         stageFlash(drama);
         stageQuake(drama);
         spawnStageParticles(isMega ? ['⭐', '⚡', '🌟', '🔥'] : ['✨', '⭐', '💫'], isMega ? 10 + drama * 3 : 8);
-        startCelebrationBreak();
+        startGracePeriod();
         if (firstTime) {
           sound.playLevelUp(drama);
           addMilestone('quiet', '🐉', `Level ${target + 1}: ${lvl.name}`);
@@ -2124,11 +2124,11 @@
       }
     }
 
-    // Give the class a moment to cheer without shrinking the dragon
-    function startCelebrationBreak() {
+    // Hidden grace period: a burst of excitement right after a level-up doesn't
+    // shrink the dragon. Nothing on screen changes, so noise isn't encouraged.
+    function startGracePeriod() {
       if (dragonSettings.graceSec <= 0) return;
       state.dragonGraceMs = dragonSettings.graceSec * 1000;
-      updateDragonMood();
     }
 
     // The final form: the Legendary dragon lays an egg and a new dragon starts growing
@@ -2144,7 +2144,7 @@
       stageFlash(drama);
       stageQuake(drama);
       spawnStageParticles(['🥚', '💖', '✨', '🌟', '🔥', '⚡'], 34);
-      startCelebrationBreak();
+      startGracePeriod();
       sound.playLevelUp(drama);
       const top = DRAGON_LEVELS[DRAGON_TOP_LEVEL];
       const n = state.dragonFamily + 1;
@@ -2223,9 +2223,8 @@
     function updateDragonBar() {
       const p = state.dragonProgress;
       const level = state.dragonLevel;
-      const inGrace = state.dragonGraceMs > 0;
       const isLoud = state.activeTimer === 'loud';
-      const draining = isLoud && !inGrace;
+      const draining = isLoud; // looks the same during the hidden grace period
       const levelStart = level;
       const pct = Math.max(0, Math.min(100, (p - levelStart) * 100));
 
@@ -2233,10 +2232,7 @@
       dom.dragonXpFill.classList.toggle('xp-draining', draining);
 
       let label, time;
-      if (inGrace) {
-        label = '🎉 Celebration time! Noise is free';
-        time = `${formatShort(state.dragonGraceMs)} left`;
-      } else if (draining) {
+      if (draining) {
         label = '⚠️ Too loud! Power draining…';
         if (level > 0) time = `shrinks in ${formatShort((p - levelStart) * loudLevelMs())}`;
         else time = p > 0 ? 'egg cooling down' : '';
@@ -2246,17 +2242,15 @@
       }
       if (dom.dragonNextLabel.textContent !== label) dom.dragonNextLabel.textContent = label;
       if (dom.dragonNextTime.textContent !== time) dom.dragonNextTime.textContent = time;
-      dom.dragonNextLabel.classList.toggle('text-pink-300', inGrace);
       dom.dragonNextLabel.classList.toggle('text-loud-300', draining);
-      dom.dragonNextLabel.classList.toggle('text-quiet-200', !inGrace && !draining);
+      dom.dragonNextLabel.classList.toggle('text-quiet-200', !draining);
     }
 
     function updateDragonMood() {
       const wrap = dom.dragonWrap;
       let mode = state.activeTimer === 'loud' ? 'loud' : state.activeTimer === 'quiet' ? 'quiet' : 'paused';
-      if (mode === 'loud' && state.dragonGraceMs > 0) mode = 'celebrate';
       wrap.classList.toggle('is-loud', mode === 'loud');
-      wrap.classList.toggle('is-quiet', mode === 'quiet' || mode === 'celebrate');
+      wrap.classList.toggle('is-quiet', mode === 'quiet');
       wrap.classList.toggle('is-paused', mode === 'paused');
       dom.stageLoudTint.classList.toggle('opacity-0', mode !== 'loud');
       dom.stageLoudTint.classList.toggle('opacity-100', mode === 'loud');
@@ -2267,9 +2261,6 @@
       if (mode === 'loud') {
         dom.dragonMood.className = base + 'bg-loud-500 text-white border-loud-400';
         dom.dragonMood.textContent = '😟 Too loud!';
-      } else if (mode === 'celebrate') {
-        dom.dragonMood.className = base + 'bg-pink-500/20 text-pink-300 border-pink-500';
-        dom.dragonMood.textContent = '🎉 Celebrating!';
       } else if (mode === 'quiet') {
         dom.dragonMood.className = base + 'bg-quiet-500/20 text-quiet-200 border-quiet-400';
         dom.dragonMood.textContent = state.dragonLevel >= DRAGON_MEGA_LEVEL ? '⚡ Powered up!' : '😊 Growing';
@@ -3092,13 +3083,13 @@
     });
 
     /* ==========================================================================
-       DRAGON SETTINGS (grow / shrink timing and celebration break)
+       DRAGON SETTINGS (grow / shrink timing and hidden grace period)
        ========================================================================== */
     const minutesText = (m) => m < 1 ? `${m * 60} seconds` : `${m} minute${m === 1 ? '' : 's'}`;
     const dragonOptionLabel = {
       quietMin: (v) => `${v} min`,
       loudMin: (v) => v < 1 ? `${v * 60} sec` : `${v} min`,
-      graceSec: (v) => v === 0 ? 'Off' : v === 60 ? '1 min' : `${v} sec`,
+      graceSec: (v) => v === 0 ? 'Off' : `${v} sec`,
     };
 
     function setDragonSetting(key, value) {
@@ -3121,7 +3112,7 @@
     }
 
     // Replays the recorded stretches with the same rules as the live timer:
-    // Loud drains, the egg is the floor, and level-ups start a celebration break.
+    // Loud drains, the egg is the floor, and level-ups start the grace period.
     function recalculateDragon() {
       if (state.dragonHistory.length === 0) return;
       const STEP = 100;
@@ -3171,12 +3162,11 @@
         });
       });
 
-      const q = dragonSettings.quietMin, l = dragonSettings.loudMin, g = dragonSettings.graceSec;
+      const q = dragonSettings.quietMin, l = dragonSettings.loudMin;
       const loudPhrase = minutesText(l);
       dom.dragonHint.textContent = `Every ${q === 1 ? 'quiet minute' : `${q} quiet minutes`} grows your dragon. ${loudPhrase[0].toUpperCase() + loudPhrase.slice(1)} of Loud Time shrinks it a level!`;
-      const graceText = g === 0 ? 'no celebration break' : `${dragonOptionLabel.graceSec(g)} celebration break`;
       document.getElementById('dragonRulesShort').textContent =
-        `Grows every ${q} quiet min · shrinks after ${dragonOptionLabel.loudMin(l)} loud · ${graceText}`;
+        `Grows every ${q} quiet min · shrinks after ${dragonOptionLabel.loudMin(l)} loud`;
       document.getElementById('dragonRulesSummary').textContent =
         `Mega Dragon at ${q * DRAGON_MEGA_LEVEL} quiet min · final form (and a surprise) at ${q * DRAGON_TOP_LEVEL} min.`;
     }
