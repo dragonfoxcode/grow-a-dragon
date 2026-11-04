@@ -485,7 +485,7 @@
         <!-- Level title -->
         <div class="relative z-10 px-5 sm:px-6 pt-5 flex items-start justify-between gap-3">
           <div>
-            <div class="text-xs sm:text-sm font-bold uppercase tracking-widest text-quiet-300">Level <span id="dragonLevelNum">1</span> of 6</div>
+            <div class="text-xs sm:text-sm font-bold uppercase tracking-widest text-quiet-300"><span id="dragonGenLabel" class="hidden"></span>Level <span id="dragonLevelNum">1</span> of 6</div>
             <h2 id="dragonLevelName" class="text-3xl sm:text-4xl font-display font-bold text-white leading-tight">Dragon Egg</h2>
             <div id="dragonStars" class="hidden mt-1 text-lg sm:text-xl leading-tight" aria-label="Mega stars"></div>
           </div>
@@ -494,6 +494,8 @@
 
         <!-- The dragon -->
         <div id="dragonArea" class="relative z-10 flex-1 flex items-end justify-center min-h-[200px]">
+          <!-- Grown dragons that laid an egg (the family) -->
+          <div id="dragonFamily" class="hidden absolute left-1 sm:left-3 bottom-1 w-20 sm:w-28 pointer-events-none" title="Dragon family"></div>
           <div id="dragonWrap" class="dragon-wrap is-paused w-[min(80%,330px)] aspect-square">
             <svg id="dragonSvg" class="w-full h-full overflow-visible" viewBox="0 0 240 240" aria-label="Class dragon"></svg>
           </div>
@@ -1522,6 +1524,7 @@
       dragonBest: 0,
       dragonStars: 0,     // Mega stars right now
       dragonBestStars: 0, // most Mega stars this session
+      dragonFamily: 0,    // grown dragons that reached the last Mega star and laid an egg
       milestones: [], // { side, icon, label, clock } newest first
 
       // Class Logs
@@ -1550,6 +1553,7 @@
     // Loud Time takes stars away first, so they act as a buffer that protects Mega.
     const DRAGON_MAX_STARS = 10;
     // Progress is counted in levels; each Mega star is one more level's worth
+    // Reaching the last star lays an egg: the grown dragon joins the family and a new one starts
     const DRAGON_MAX_PROGRESS = DRAGON_MAX_LEVEL + DRAGON_MAX_STARS;
     // What each Mega star unlocks (stars past the last one keep the max look)
     const MEGA_STAR_BONUSES = [
@@ -1602,6 +1606,8 @@
       dragonLevelNum: document.getElementById('dragonLevelNum'),
       dragonLevelName: document.getElementById('dragonLevelName'),
       dragonStars: document.getElementById('dragonStars'),
+      dragonFamily: document.getElementById('dragonFamily'),
+      dragonGenLabel: document.getElementById('dragonGenLabel'),
       dragonMood: document.getElementById('dragonMood'),
       dragonTrack: document.getElementById('dragonTrack'),
       dragonNextLabel: document.getElementById('dragonNextLabel'),
@@ -1764,7 +1770,7 @@
             }
           } else if (state.activeTimer === 'quiet') {
             state.quietElapsedMs += delta;
-            state.dragonProgress = Math.min(DRAGON_MAX_PROGRESS, state.dragonProgress + delta / quietLevelMs());
+            state.dragonProgress = Math.min(DRAGON_MAX_PROGRESS + 1, state.dragonProgress + delta / quietLevelMs());
           }
           if (state.dragonGraceMs > 0) {
             state.dragonGraceMs -= delta;
@@ -1878,6 +1884,7 @@
       state.dragonBest = 0;
       state.dragonStars = 0;
       state.dragonBestStars = 0;
+      state.dragonFamily = 0;
       state.milestones = [];
       renderMilestones();
       renderDragon();
@@ -2061,6 +2068,10 @@
     ];
 
     function checkDragonLevel() {
+      if (state.dragonProgress >= DRAGON_MAX_PROGRESS) {
+        layDragonEgg();
+        return;
+      }
       const tier = Math.max(0, Math.floor(state.dragonProgress));
       const target = Math.min(DRAGON_MAX_LEVEL, tier);
       const stars = Math.min(DRAGON_MAX_STARS, Math.max(0, tier - DRAGON_MAX_LEVEL));
@@ -2104,6 +2115,26 @@
       if (dragonSettings.graceSec <= 0) return;
       state.dragonGraceMs = dragonSettings.graceSec * 1000;
       updateDragonMood();
+    }
+
+    // The last Mega star: the Legendary dragon lays an egg and a new dragon starts growing
+    function layDragonEgg() {
+      state.dragonFamily++;
+      state.dragonProgress = Math.max(0, state.dragonProgress - DRAGON_MAX_PROGRESS);
+      state.dragonLevel = 0;
+      state.dragonStars = 0;
+      state.dragonBest = 0;
+      state.dragonBestStars = 0;
+      renderDragon();
+      replayAnimation(dom.dragonWrap, 'dg-evolve', 1200);
+      replayAnimation(dom.dragonFamily, 'badge-pop', 600);
+      stageFlash();
+      spawnStageParticles(['🥚', '💖', '✨', '🌟'], 16);
+      startCelebrationBreak();
+      sound.playLevelUp(true);
+      const n = state.dragonFamily + 1;
+      addMilestone('quiet', '🥚', `${megaBonus(DRAGON_MAX_STARS).name} laid an egg! Dragon #${n} is on the way`);
+      showToast('quiet', miniDragon(0), 'A new dragon egg!', `Your Legendary dragon laid an egg. Dragon #${n} starts growing now!`);
     }
 
     function checkMegaStars(stars) {
@@ -2179,6 +2210,13 @@
         ? `${'⭐'.repeat(stars)}<span class="ml-1.5 text-xs sm:text-sm font-bold text-quiet-200 align-middle">${megaBonus(stars).name}</span>`
         : '';
       dom.dragonLevelNum.textContent = level + 1;
+      const fam = state.dragonFamily;
+      dom.dragonGenLabel.classList.toggle('hidden', fam === 0);
+      dom.dragonGenLabel.textContent = fam > 0 ? `Dragon #${fam + 1} · ` : '';
+      dom.dragonFamily.classList.toggle('hidden', fam === 0);
+      dom.dragonFamily.innerHTML = fam > 0 ? `
+        <svg viewBox="-20 -30 280 280" class="w-full h-auto overflow-visible" aria-label="Grown dragon">${dragonArt(DRAGON_MAX_LEVEL, DRAGON_MAX_STARS)}</svg>
+        <div class="text-center -mt-1"><span class="inline-block px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-violet-950/80 text-pink-300 border border-pink-500/50 whitespace-nowrap">👑 Family${fam > 1 ? ` ×${fam}` : ''}</span></div>` : '';
       dom.dragonLevelName.textContent = DRAGON_LEVELS[level].name;
       dom.dragonLevelName.classList.toggle('text-pink-300', level === DRAGON_MAX_LEVEL);
 
@@ -2217,9 +2255,9 @@
         else if (level > 0) time = `shrinks in ${formatShort((p - levelStart) * loudLevelMs())}`;
         else time = p > 0 ? 'egg cooling down' : '';
       } else if (isMega) {
-        if (stars >= DRAGON_MAX_STARS) {
-          label = '🌟 All Mega stars earned!';
-          time = 'MAX!';
+        if (stars === DRAGON_MAX_STARS - 1) {
+          label = '🥚 Next: Legendary + a new egg!';
+          time = `${formatShort((levelStart + 1 - p) * quietLevelMs())} of quiet`;
         } else {
           label = `⭐ Next: Mega Star ${stars + 1}`;
           time = `${formatShort((levelStart + 1 - p) * quietLevelMs())} of quiet`;
@@ -2618,7 +2656,8 @@
         duration: formatTime(totalTimeMs, false),
         loudShare: `${loudPercent}%`,
         quietShare: `${quietPercent}%`,
-        dragonBest: dragonTitle(state.dragonBest, state.dragonBestStars),
+        dragonBest: state.dragonFamily > 0 ? dragonTitle(DRAGON_MAX_LEVEL, DRAGON_MAX_STARS) : dragonTitle(state.dragonBest, state.dragonBestStars),
+        dragonFamily: state.dragonFamily,
         dragonFinal: dragonTitle(state.dragonLevel, state.dragonStars)
       };
 
@@ -2664,7 +2703,7 @@
           <td class="py-2.5 px-3 font-mono font-bold">${log.duration}</td>
           <td class="py-2.5 px-3 font-mono font-bold text-loud-400">${log.loudShare}</td>
           <td class="py-2.5 px-3 font-mono font-bold text-quiet-300">${log.quietShare}</td>
-          <td class="py-2.5 px-3 font-semibold"><div class="text-quiet-300 whitespace-nowrap">🏆 Best: ${log.dragonBest}</div><div class="text-xs text-slate-400 whitespace-nowrap">Ended as: ${log.dragonFinal}</div></td>
+          <td class="py-2.5 px-3 font-semibold"><div class="text-quiet-300 whitespace-nowrap">🏆 Best: ${log.dragonBest}</div>${log.dragonFamily ? `<div class="text-xs text-pink-300 whitespace-nowrap">👑 Dragons raised: ${log.dragonFamily}</div>` : ''}<div class="text-xs text-slate-400 whitespace-nowrap">Ended as: ${log.dragonFamily ? `Dragon #${log.dragonFamily + 1}, ` : ''}${log.dragonFinal}</div></td>
         </tr>
       `).join('');
     }
@@ -3087,13 +3126,19 @@
       if (state.dragonHistory.length === 0) return;
       const STEP = 100;
       const graceMs = dragonSettings.graceSec * 1000;
-      let p = 0, level = 0, stars = 0, best = 0, bestStars = 0, grace = 0;
+      let p = 0, level = 0, stars = 0, best = 0, bestStars = 0, grace = 0, family = 0;
       state.dragonHistory.forEach(([side, ms]) => {
         for (let left = ms; left > 0; left -= STEP) {
           const d = Math.min(STEP, left);
-          if (side === 'quiet') p = Math.min(DRAGON_MAX_PROGRESS, p + d / quietLevelMs());
+          if (side === 'quiet') p = p + d / quietLevelMs();
           else if (grace <= 0) p = Math.max(0, p - d / loudLevelMs());
           if (grace > 0) grace = Math.max(0, grace - d);
+          if (p >= DRAGON_MAX_PROGRESS) {
+            family++;
+            p -= DRAGON_MAX_PROGRESS;
+            level = 0; stars = 0; best = 0; bestStars = 0;
+            grace = graceMs;
+          }
           const tier = Math.floor(p);
           const lvl = Math.min(DRAGON_MAX_LEVEL, tier);
           const st = Math.min(DRAGON_MAX_STARS, Math.max(0, tier - DRAGON_MAX_LEVEL));
@@ -3108,9 +3153,11 @@
       state.dragonStars = stars;
       state.dragonBest = best;
       state.dragonBestStars = bestStars;
+      state.dragonFamily = family;
       renderDragon();
       updateDragonMood();
-      addMilestone('quiet', '🔄', `Level timing changed: dragon is now ${dragonTitle(level, stars)}`);
+      const who = family > 0 ? `dragon #${family + 1} is now` : 'dragon is now';
+      addMilestone('quiet', '🔄', `Level timing changed: ${who} ${dragonTitle(level, stars)}`);
     }
 
     function renderDragonSettings() {
@@ -3135,7 +3182,7 @@
       document.getElementById('dragonRulesShort').textContent =
         `Grows every ${q} quiet min · shrinks after ${dragonOptionLabel.loudMin(l)} loud · ${graceText}`;
       document.getElementById('dragonRulesSummary').textContent =
-        `Mega Dragon takes ${q * DRAGON_MAX_LEVEL} quiet minutes, then a Mega star every ${q} min.`;
+        `Mega Dragon takes ${q * DRAGON_MAX_LEVEL} quiet min, then a Mega star every ${q} min. A new egg at ${q * DRAGON_MAX_PROGRESS} min.`;
     }
 
     /* ==========================================================================
