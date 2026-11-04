@@ -862,7 +862,7 @@
         <div class="p-3.5 rounded-2xl bg-violet-950 border border-violet-800 space-y-3">
           <div>
             <span class="text-xs font-bold uppercase tracking-wider text-quiet-300">🐉 Dragon Levels</span>
-            <p class="text-[11px] text-slate-400">Changes right away (the dragon keeps its level) and is remembered on this computer.</p>
+            <p class="text-[11px] text-slate-400">Changes right away: the dragon is recalculated from the time on the clocks, so it may jump up or down. Remembered on this computer.</p>
           </div>
           <div>
             <div class="text-sm font-semibold text-white mb-1.5">Quiet Time to grow one level</div>
@@ -1517,6 +1517,7 @@
       // Class dragon: Quiet Time adds power, Loud Time drains it 5x as fast
       dragonProgress: 0, // in levels, e.g. 2.4 = Baby Dragon, 40% to the next level
       dragonGraceMs: 0,  // celebration time left after a level-up (noise doesn't shrink the dragon)
+      dragonHistory: [], // [side, ms] stretches since the last reset, so the dragon can be recalculated
       dragonLevel: 0,
       dragonBest: 0,
       dragonStars: 0,     // Mega stars right now
@@ -1752,6 +1753,10 @@
         state.lastTimestamp = now;
 
         if (state.activeTimer) {
+          const last = state.dragonHistory[state.dragonHistory.length - 1];
+          if (last && last[0] === state.activeTimer) last[1] += delta;
+          else state.dragonHistory.push([state.activeTimer, delta]);
+
           if (state.activeTimer === 'loud') {
             state.loudElapsedMs += delta;
             if (state.dragonGraceMs <= 0) {
@@ -1868,6 +1873,7 @@
 
       state.dragonProgress = 0;
       state.dragonGraceMs = 0;
+      state.dragonHistory = [];
       state.dragonLevel = 0;
       state.dragonBest = 0;
       state.dragonStars = 0;
@@ -2971,8 +2977,7 @@
       });
 
       document.getElementById('dragonDefaultsBtn').addEventListener('click', () => {
-        Object.entries(DRAGON_DEFAULTS).forEach(([k, v]) => { dragonSettings[k] = v; });
-        setDragonSetting('quietMin', DRAGON_DEFAULTS.quietMin);
+        setDragonSettings({ ...DRAGON_DEFAULTS });
       });
 
       dom.applySettingsBtn.addEventListener('click', () => {
@@ -3058,14 +3063,54 @@
     };
 
     function setDragonSetting(key, value) {
-      dragonSettings[key] = value;
+      setDragonSettings({ [key]: value });
+    }
+
+    // Changing the grow/shrink timing recalculates the dragon from the real
+    // Quiet/Loud time so far, as if the new timing had been used all along.
+    function setDragonSettings(changes) {
+      const timingChanged = ['quietMin', 'loudMin'].some(k => k in changes && changes[k] !== dragonSettings[k]);
+      Object.assign(dragonSettings, changes);
       try { localStorage.setItem('quietloud-dragon', JSON.stringify(dragonSettings)); } catch (e) {}
-      if (key === 'graceSec' && state.dragonGraceMs > value * 1000) {
-        state.dragonGraceMs = value * 1000;
+      if (state.dragonGraceMs > dragonSettings.graceSec * 1000) {
+        state.dragonGraceMs = dragonSettings.graceSec * 1000;
         updateDragonMood();
       }
+      if (timingChanged) recalculateDragon();
       renderDragonSettings();
       updateDragonBar();
+    }
+
+    // Replays the recorded stretches with the same rules as the live timer:
+    // Loud drains, the egg is the floor, and level-ups start a celebration break.
+    function recalculateDragon() {
+      if (state.dragonHistory.length === 0) return;
+      const STEP = 100;
+      const graceMs = dragonSettings.graceSec * 1000;
+      let p = 0, level = 0, stars = 0, best = 0, bestStars = 0, grace = 0;
+      state.dragonHistory.forEach(([side, ms]) => {
+        for (let left = ms; left > 0; left -= STEP) {
+          const d = Math.min(STEP, left);
+          if (side === 'quiet') p = Math.min(DRAGON_MAX_PROGRESS, p + d / quietLevelMs());
+          else if (grace <= 0) p = Math.max(0, p - d / loudLevelMs());
+          if (grace > 0) grace = Math.max(0, grace - d);
+          const tier = Math.floor(p);
+          const lvl = Math.min(DRAGON_MAX_LEVEL, tier);
+          const st = Math.min(DRAGON_MAX_STARS, Math.max(0, tier - DRAGON_MAX_LEVEL));
+          if (lvl > level || (lvl === level && st > stars)) grace = graceMs;
+          level = lvl; stars = st;
+          best = Math.max(best, lvl); bestStars = Math.max(bestStars, st);
+        }
+      });
+      state.dragonProgress = p;
+      state.dragonGraceMs = grace;
+      state.dragonLevel = level;
+      state.dragonStars = stars;
+      state.dragonBest = best;
+      state.dragonBestStars = bestStars;
+      renderDragon();
+      updateDragonMood();
+      addMilestone('quiet', '🔄', `Level timing changed: dragon is now ${dragonTitle(level, stars)}`);
     }
 
     function renderDragonSettings() {
