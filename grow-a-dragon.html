@@ -400,6 +400,13 @@
       </button>
 
       <!-- Settings Dropdown -->
+      <!-- Full screen toggle (hidden if the browser can't do full screen) -->
+      <button id="fullscreenBtn" title="Full screen (F)" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-750 text-slate-200 border border-violet-700 transition">
+        <svg id="fullscreenIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+        <span class="hidden sm:inline" id="fullscreenLabel">Full Screen</span>
+        <span class="kbd ml-0.5" title="Hotkey: F">F</span>
+      </button>
+
       <button id="settingsModalBtn" title="Settings & Mic Config" class="p-2 rounded-xl bg-violet-800 hover:bg-violet-750 text-slate-300 border border-violet-700 transition">
         <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
       </button>
@@ -2079,7 +2086,7 @@
       { name: 'Adult Dragon',     short: 'Adult',    title: 'Your dragon is all grown up!', sub: 'Something big is coming…' },
       { name: 'MEGA DRAGON',      short: 'Mega',     title: 'MEGA DRAGON POWER!',           sub: 'Legendary focus, class!' },
       { name: 'Storm Dragon',     short: 'Storm',    title: 'STORM DRAGON!',                sub: 'Lightning crackles and power veins glow across its skin!' },
-      { name: 'Spiky Dragon',     short: 'Spiky',    title: 'SPIKY DRAGON!',                sub: 'New horns and spikes burst out!' },
+      { name: 'Spikey Dragon',    short: 'Spikey',   title: 'SPIKEY DRAGON!',               sub: 'New horns and spikes burst out!' },
       { name: 'Blazing Dragon',   short: 'Blazing',  title: 'BLAZING DRAGON!',              sub: 'Its aura explodes into golden flame!' },
       { name: 'Inferno Dragon',   short: 'Inferno',  title: 'INFERNO DRAGON!!',             sub: 'Fire horns, giant wings and an orange inferno!' },
       { name: 'Thunder King',     short: 'Thunder',  title: 'THUNDER KING!!',               sub: 'A crown of horns and roaring thunder!' },
@@ -3049,6 +3056,9 @@
           resetAllTimers();
         } else if (key === 'm') {
           dom.soundToggleBtn.click();
+        } else if (key === 'f' && !e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          toggleFullscreen();
         } else if (e.key === 'Escape') {
           dom.settingsModal.classList.add('hidden');
           dom.logsModal.classList.add('hidden');
@@ -3063,6 +3073,7 @@
        ========================================================================== */
     window.addEventListener('load', () => {
       setupEvents();
+      setupFullscreen();
       startTimerLoop();
       updateDisplay();
       applyVisualState();
@@ -3084,6 +3095,41 @@
         });
       }
     });
+
+    /* ==========================================================================
+       FULL SCREEN (button in the header, or press F; Esc also exits)
+       ========================================================================== */
+    const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+    const fsSupported = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+    const FS_ENTER_ICON = '<path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>';
+    const FS_EXIT_ICON = '<path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>';
+
+    function toggleFullscreen() {
+      if (!fsSupported) return;
+      const root = document.documentElement;
+      if (fsElement()) {
+        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      } else {
+        const req = root.requestFullscreen || root.webkitRequestFullscreen;
+        const result = req.call(root);
+        if (result && result.catch) result.catch(() => {});
+      }
+    }
+
+    function updateFullscreenButton() {
+      const on = !!fsElement();
+      document.getElementById('fullscreenIcon').innerHTML = on ? FS_EXIT_ICON : FS_ENTER_ICON;
+      document.getElementById('fullscreenLabel').textContent = on ? 'Exit Full Screen' : 'Full Screen';
+      document.getElementById('fullscreenBtn').title = on ? 'Exit full screen (F or Esc)' : 'Full screen (F)';
+    }
+
+    function setupFullscreen() {
+      const btn = document.getElementById('fullscreenBtn');
+      if (!fsSupported) { btn.classList.add('hidden'); return; }
+      btn.addEventListener('click', toggleFullscreen);
+      document.addEventListener('fullscreenchange', updateFullscreenButton);
+      document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+    }
 
     /* ==========================================================================
        DRAGON SETTINGS (grow / shrink timing and hidden grace period)
