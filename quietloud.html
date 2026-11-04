@@ -332,10 +332,20 @@
     @keyframes twinkle { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.25; } }
     html.light .scene-star { display: none; }
     .dragon-wrap.is-mega svg { filter: drop-shadow(0 0 18px rgb(var(--dragon-horn) / 0.75)); }
+    /* Mega stars: lightning and glowing veins (stars 4+ recolor these inline) */
+    .dg-bolt-color { stroke: rgb(253 224 71); }
+    .dg-vein-glow { stroke: rgb(253 224 71); }
+    .dg-outline { stroke: rgb(var(--dragon-ink)); stroke-width: 2; stroke-opacity: 0.55; stroke-linejoin: round; }
+    .dg-bolt { animation: dg-bolt 1.3s steps(1) infinite; }
+    .dg-bolt:nth-of-type(2n) { animation-delay: 0.4s; }
+    .dg-bolt:nth-of-type(3n) { animation-delay: 0.85s; }
+    .dg-vein { animation: dg-vein 1.4s ease-in-out infinite alternate; }
+    @keyframes dg-bolt { 0%, 100% { opacity: 1; } 10% { opacity: 0.15; } 18% { opacity: 1; } 50% { opacity: 0; } 58% { opacity: 1; } 75% { opacity: 0.35; } }
+    @keyframes dg-vein { from { opacity: 0.5; } to { opacity: 1; } }
     .xp-draining { background-image: linear-gradient(to right, rgb(var(--loud-600)), rgb(var(--loud-400))) !important; }
 
     @media (prefers-reduced-motion: reduce) {
-      .dg-breathe, .dg-wing-flap, .dg-tail, .dg-egg-rock, .dg-aura, .dg-crest, .dragon-wrap.is-loud, .scene-star { animation: none !important; }
+      .dg-breathe, .dg-wing-flap, .dg-tail, .dg-egg-rock, .dg-aura, .dg-crest, .dg-bolt, .dg-vein, .dragon-wrap.is-loud, .scene-star { animation: none !important; }
     }
   </style>
 </head>
@@ -477,6 +487,7 @@
           <div>
             <div class="text-xs sm:text-sm font-bold uppercase tracking-widest text-quiet-300">Level <span id="dragonLevelNum">1</span> of 6</div>
             <h2 id="dragonLevelName" class="text-3xl sm:text-4xl font-display font-bold text-white leading-tight">Dragon Egg</h2>
+            <div id="dragonStars" class="hidden mt-1 text-lg sm:text-xl leading-tight" aria-label="Mega stars"></div>
           </div>
           <div id="dragonMood" class="shrink-0 px-3 py-1.5 rounded-full text-xs sm:text-sm font-bold bg-violet-950/70 text-slate-300 border border-violet-700">😴 Sleeping</div>
         </div>
@@ -498,7 +509,7 @@
           <div class="h-5 rounded-full bg-violet-950/80 border-2 border-violet-700 overflow-hidden p-0.5">
             <div id="dragonXpFill" class="h-full rounded-full bg-gradient-to-r from-quiet-500 to-quiet-300" style="width: 0%;"></div>
           </div>
-          <p id="dragonHint" class="text-xs sm:text-sm text-slate-300 mt-2 text-center font-semibold">Every 5 quiet minutes grows your dragon. 1 loud minute takes 5 quiet minutes away!</p>
+          <p id="dragonHint" class="text-xs sm:text-sm text-slate-300 mt-2 text-center font-semibold">Every 5 quiet minutes grows your dragon (and earns Mega stars after Mega). 1 loud minute takes 5 quiet minutes away!</p>
         </div>
       </section>
 
@@ -1482,6 +1493,8 @@
       dragonXpMs: 0,
       dragonLevel: 0,
       dragonBest: 0,
+      dragonStars: 0,     // Mega stars right now
+      dragonBestStars: 0, // most Mega stars this session
       milestones: [], // { side, icon, label, clock } newest first
 
       // Class Logs
@@ -1493,8 +1506,40 @@
     const DRAGON_LEVEL_MS = 5 * 60 * 1000;
     const DRAGON_LOUD_DRAIN = 5;
     const DRAGON_MAX_LEVEL = 5;
-    // Past Mega, the bar keeps filling for 5 more minutes as a "Mega power" cushion
-    const DRAGON_MAX_XP = (DRAGON_MAX_LEVEL + 1) * DRAGON_LEVEL_MS;
+    // Past Mega, every 5 more quiet minutes earns a Mega star (up to 10).
+    // Loud Time takes stars away first, so they act as a buffer that protects Mega.
+    const DRAGON_MAX_STARS = 10;
+    const DRAGON_MAX_XP = (DRAGON_MAX_LEVEL + DRAGON_MAX_STARS) * DRAGON_LEVEL_MS;
+    // What each Mega star unlocks (stars past the last one keep the max look)
+    const MEGA_STAR_BONUSES = [
+      { name: 'Crackling Lightning', sub: 'Lightning is crackling around your dragon!' },
+      { name: 'Glowing Veins',       sub: 'Glowing power veins are cracking across its skin!' },
+      { name: 'Extra Horns & Spikes', sub: 'New horns and spikes burst out!' },
+      { name: 'Blazing Aura',        sub: 'The aura bursts into golden flame!' },
+      { name: 'Fire Horns',          sub: 'More horns, and the flames turn amber!' },
+      { name: 'Orange Inferno',      sub: 'Bigger wings and an orange inferno!' },
+      { name: 'Thunder Crown',       sub: 'A crown of horns and roaring lightning!' },
+      { name: 'Crimson Fire',        sub: 'The flames are burning deep red!' },
+      { name: 'Volcano Heart',       sub: 'A white-hot core blazes inside the flames!' },
+      { name: 'Legendary Sun Dragon', sub: 'The most powerful dragon ever. LEGENDARY!' },
+    ];
+    // Stars 4–10 build on star 3: each step is warmer (gold → orange → red → crimson)
+    // with a bigger flame, more lightning, more/bigger horns and bigger wings
+    const MEGA_WARM_STEPS = [
+      { outer: '#facc15', inner: '#fef08a', bolt: '#fde047', vein: '#fde047', glow: 'rgb(250 204 21 / 0.8)' },
+      { outer: '#f59e0b', inner: '#fde68a', bolt: '#fcd34d', vein: '#fbbf24', glow: 'rgb(245 158 11 / 0.8)' },
+      { outer: '#f97316', inner: '#fdba74', bolt: '#fbbf24', vein: '#fb923c', glow: 'rgb(249 115 22 / 0.85)' },
+      { outer: '#ea580c', inner: '#fb923c', bolt: '#fb923c', vein: '#f97316', glow: 'rgb(234 88 12 / 0.85)' },
+      { outer: '#dc2626', inner: '#f97316', bolt: '#f97316', vein: '#ef4444', glow: 'rgb(220 38 38 / 0.85)' },
+      { outer: '#b91c1c', inner: '#ea580c', bolt: '#f87171', vein: '#dc2626', glow: 'rgb(185 28 28 / 0.9)' },
+      { outer: '#991b1b', inner: '#ea580c', bolt: '#fbbf24', vein: '#f97316', glow: 'rgb(234 88 12 / 0.95)' },
+    ];
+    // How far past star 3 the dragon is (0 = star 3 or below), and that step's colors
+    const megaPower = (stars) => Math.max(0, Math.min(stars, DRAGON_MAX_STARS) - 3);
+    const megaWarm = (stars) => megaPower(stars) > 0 ? MEGA_WARM_STEPS[Math.min(megaPower(stars), MEGA_WARM_STEPS.length) - 1] : null;
+    const megaBonus = (stars) => MEGA_STAR_BONUSES[Math.min(stars, MEGA_STAR_BONUSES.length) - 1];
+    // e.g. "MEGA DRAGON ⭐3"
+    const dragonTitle = (level, stars) => DRAGON_LEVELS[level].name + (stars > 0 ? ` ⭐${stars}` : '');
 
     // Kept outside the mic meter so slider/boost changes made before the mic starts aren't lost
     const micSettings = { threshold: 30, gainBoost: 2.5 };
@@ -1515,6 +1560,7 @@
       dragonSvg: document.getElementById('dragonSvg'),
       dragonLevelNum: document.getElementById('dragonLevelNum'),
       dragonLevelName: document.getElementById('dragonLevelName'),
+      dragonStars: document.getElementById('dragonStars'),
       dragonMood: document.getElementById('dragonMood'),
       dragonTrack: document.getElementById('dragonTrack'),
       dragonNextLabel: document.getElementById('dragonNextLabel'),
@@ -1777,6 +1823,8 @@
       state.dragonXpMs = 0;
       state.dragonLevel = 0;
       state.dragonBest = 0;
+      state.dragonStars = 0;
+      state.dragonBestStars = 0;
       state.milestones = [];
       renderMilestones();
       renderDragon();
@@ -1960,8 +2008,14 @@
     ];
 
     function checkDragonLevel() {
-      const target = Math.max(0, Math.min(DRAGON_MAX_LEVEL, Math.floor(state.dragonXpMs / DRAGON_LEVEL_MS)));
-      if (target === state.dragonLevel) return;
+      const tier = Math.max(0, Math.floor(state.dragonXpMs / DRAGON_LEVEL_MS));
+      const target = Math.min(DRAGON_MAX_LEVEL, tier);
+      const stars = Math.min(DRAGON_MAX_STARS, Math.max(0, tier - DRAGON_MAX_LEVEL));
+      if (target === state.dragonLevel) {
+        if (stars !== state.dragonStars) checkMegaStars(stars);
+        return;
+      }
+      state.dragonStars = stars;
 
       const grew = target > state.dragonLevel;
       const firstTime = target > state.dragonBest;
@@ -1988,6 +2042,37 @@
         sound.playLevelDown();
         addMilestone('loud', '💨', `Too loud! Shrank back to ${lvl.name}`);
         showToast('loud', miniDragon(target), 'Oh no! Too loud…', `Your dragon shrank back to ${lvl.name}.`);
+      }
+    }
+
+    function checkMegaStars(stars) {
+      const gained = stars > state.dragonStars;
+      const firstTime = stars > state.dragonBestStars;
+      state.dragonStars = stars;
+      state.dragonBestStars = Math.max(state.dragonBestStars, stars);
+      renderDragon();
+      const mini = miniDragon(DRAGON_MAX_LEVEL, stars);
+
+      if (gained) {
+        const bonus = megaBonus(stars);
+        replayAnimation(dom.dragonWrap, 'dg-evolve', 1200);
+        stageFlash();
+        spawnStageParticles(['⭐', '⚡', '🌟'], 14);
+        if (firstTime) {
+          sound.playLevelUp(true);
+          addMilestone('quiet', '⭐', `Mega Star ${stars}: ${bonus.name}`);
+          showToast('quiet', mini, `⭐ Mega Star ${stars}!`, bonus.sub);
+        } else {
+          sound.playQuietMilestone();
+          addMilestone('quiet', '🌱', `Won back Mega Star ${stars}`);
+        }
+      } else {
+        replayAnimation(dom.dragonWrap, 'dg-shrink', 1000);
+        stagePuff();
+        sound.playLevelDown();
+        const left = stars > 0 ? `${stars} star${stars === 1 ? '' : 's'} left.` : 'No stars left. Careful, Mega is next!';
+        addMilestone('loud', '💨', `Too loud! Lost a Mega Star (${stars} left)`);
+        showToast('loud', mini, 'Oh no! Lost a star…', left);
       }
     }
 
@@ -2021,8 +2106,16 @@
 
     function renderDragon() {
       const level = state.dragonLevel;
-      dom.dragonSvg.innerHTML = dragonArt(level);
+      const stars = level === DRAGON_MAX_LEVEL ? state.dragonStars : 0;
+      dom.dragonSvg.innerHTML = dragonArt(level, stars);
       dom.dragonWrap.classList.toggle('is-mega', level === DRAGON_MAX_LEVEL);
+      // Stars 4+: warm glow that deepens and widens with each star
+      const warm = megaWarm(stars);
+      dom.dragonSvg.style.filter = warm ? `drop-shadow(0 0 ${18 + megaPower(stars) * 3}px ${warm.glow})` : '';
+      dom.dragonStars.classList.toggle('hidden', stars === 0);
+      dom.dragonStars.innerHTML = stars > 0
+        ? `${'⭐'.repeat(stars)}<span class="ml-1.5 text-xs sm:text-sm font-bold text-quiet-200 align-middle">${megaBonus(stars).name}</span>`
+        : '';
       dom.dragonLevelNum.textContent = level + 1;
       dom.dragonLevelName.textContent = DRAGON_LEVELS[level].name;
       dom.dragonLevelName.classList.toggle('text-pink-300', level === DRAGON_MAX_LEVEL);
@@ -2042,7 +2135,9 @@
       const level = state.dragonLevel;
       const isLoud = state.activeTimer === 'loud';
       const isMega = level === DRAGON_MAX_LEVEL;
-      const levelStart = level * DRAGON_LEVEL_MS;
+      const stars = isMega ? state.dragonStars : 0;
+      // Start of the current step: a level, or a Mega star once the dragon is Mega
+      const levelStart = (level + stars) * DRAGON_LEVEL_MS;
       const pct = Math.max(0, Math.min(100, ((xp - levelStart) / DRAGON_LEVEL_MS) * 100));
 
       dom.dragonXpFill.style.width = `${pct.toFixed(2)}%`;
@@ -2051,11 +2146,17 @@
       let label, time;
       if (isLoud) {
         label = '⚠️ Too loud! Power draining…';
-        if (level > 0) time = `shrinks in ${formatShort((xp - levelStart) / DRAGON_LOUD_DRAIN)}`;
+        if (stars > 0) time = `loses a star in ${formatShort((xp - levelStart) / DRAGON_LOUD_DRAIN)}`;
+        else if (level > 0) time = `shrinks in ${formatShort((xp - levelStart) / DRAGON_LOUD_DRAIN)}`;
         else time = xp > 0 ? 'egg cooling down' : '';
       } else if (isMega) {
-        label = '⚡ Mega power';
-        time = pct >= 100 ? 'FULL!' : `${formatShort(DRAGON_MAX_XP - xp)} to full`;
+        if (stars >= DRAGON_MAX_STARS) {
+          label = '🌟 All Mega stars earned!';
+          time = 'MAX!';
+        } else {
+          label = `⭐ Next: Mega Star ${stars + 1}`;
+          time = `${formatShort(levelStart + DRAGON_LEVEL_MS - xp)} of quiet`;
+        }
       } else {
         label = `Next: ${DRAGON_LEVELS[level + 1].name}`;
         time = `${formatShort((level + 1) * DRAGON_LEVEL_MS - xp)} of quiet`;
@@ -2132,8 +2233,26 @@
       5: { k: 0.98, headRx: 42, headRy: 37, bodyRx: 48, bodyRy: 56, eye: 12, wing: 1.12, horn: 32, tail: 1, crest: 0, brows: true, mega: true },
     };
 
-    function miniDragon(level) {
-      return `<svg viewBox="-10 -10 260 260" class="w-16 h-16 overflow-visible">${dragonArt(level)}</svg>`;
+    function miniDragon(level, stars = 0) {
+      return `<svg viewBox="-10 -10 260 260" class="w-16 h-16 overflow-visible">${dragonArt(level, stars)}</svg>`;
+    }
+
+    // A lightning bolt: dark outline, colored glow, white-hot core
+    function lightningBolt(d, color) {
+      return `<g class="dg-bolt" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="${d}" stroke="rgb(var(--dragon-ink))" stroke-width="7" opacity="0.5"/>
+        <path d="${d}" class="dg-bolt-color" stroke-width="4.5"${color ? ` style="stroke:${color}"` : ''}/>
+        <path d="${d}" stroke="white" stroke-width="1.6"/>
+      </g>`;
+    }
+
+    // A glowing power vein or crack: colored glow with a white core
+    function glowVein(d, w = 4.5, color) {
+      return `<g class="dg-vein" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="${d}" stroke="rgb(var(--dragon-ink))" stroke-width="${f1(w + 2.5)}" opacity="0.45"/>
+        <path d="${d}" class="dg-vein-glow" stroke-width="${w}"${color ? ` style="stroke:${color}"` : ''}/>
+        <path d="${d}" stroke="white" stroke-width="${f1(w * 0.35)}" opacity="0.9"/>
+      </g>`;
     }
 
     const f1 = (n) => Math.round(n * 10) / 10;
@@ -2182,7 +2301,8 @@
         <ellipse cx="92" cy="118" rx="7" ry="17" fill="white" opacity="0.35" transform="rotate(20 92 118)"/>${extra}`;
     }
 
-    function dragonArt(level) {
+    // stars = Mega stars (only used at Mega): 1 lightning, 2 veins, 3 extra horns & spikes, 4+ storm
+    function dragonArt(level, stars = 0) {
       const shadow = (rx) => `<ellipse cx="120" cy="224" rx="${rx}" ry="8" class="dg-ink" opacity="0.28"/>`;
 
       if (level === 0) {
@@ -2212,13 +2332,23 @@
       const headCy = bodyTop - p.headRy * 0.45;
       const headTop = headCy - p.headRy;
       let parts = '';
+      // Stars 4+: growth factor and warm colors
+      const power = megaPower(stars), warm = megaWarm(stars);
+      const veinColor = warm ? warm.vein : undefined;
 
       // Mega aura (behind everything)
       if (p.mega) {
-        parts += `<g class="dg-aura">
-          <path class="dg-horn" opacity="0.6" d="M30 222 C8 170 20 118 46 84 L56 112 C56 64 80 34 98 4 L108 50 L120 -12 L132 50 L142 4 C160 34 184 64 184 112 L194 84 C220 118 232 170 210 222 Z"/>
-          <path class="dg-belly" opacity="0.55" d="M60 222 C46 180 54 140 72 112 L80 134 C82 98 100 70 110 48 L120 78 L130 48 C140 70 158 98 160 134 L168 112 C186 140 194 180 180 222 Z"/>
-        </g>`;
+        const sc = 1 + power * 0.045; // flame grows with each star past 3
+        const outerFill = warm ? ` style="fill:${warm.outer}"` : '';
+        const innerFill = warm ? ` style="fill:${warm.inner}"` : '';
+        const innerPath = 'M60 222 C46 180 54 140 72 112 L80 134 C82 98 100 70 110 48 L120 78 L130 48 C140 70 158 98 160 134 L168 112 C186 140 194 180 180 222 Z';
+        // Star 9+: a white-hot core inside the flames
+        const core = power >= 6 ? `<path fill="#fef08a" opacity="${power >= 7 ? 0.85 : 0.7}" transform="translate(120 222) scale(0.86 0.9) translate(-120 -222)" d="${innerPath}"/>` : '';
+        parts += `<g transform="translate(120 222) scale(${f1(sc * 1000) / 1000}) translate(-120 -222)"><g class="dg-aura">
+          <path class="dg-horn"${outerFill} opacity="${f1(Math.min(0.95, 0.6 + power * 0.05) * 100) / 100}" d="M30 222 C8 170 20 118 46 84 L56 112 C56 64 80 34 98 4 L108 50 L120 -12 L132 50 L142 4 C160 34 184 64 184 112 L194 84 C220 118 232 170 210 222 Z"/>
+          <path class="dg-belly"${innerFill} opacity="0.6" d="${innerPath}"/>
+          ${core}
+        </g></g>`;
       }
 
       // Tail
@@ -2233,11 +2363,30 @@
       const sy = bodyCy - p.bodyRy * 0.5;
       [-1, 1].forEach(s => {
         const sx = 120 + s * p.bodyRx * 0.45;
-        parts += `<g transform="translate(${f1(sx)} ${f1(sy)}) scale(${f1(s * p.wing * 100) / 100} ${p.wing})"><g class="dg-wing-flap">
+        const wing = p.wing * (1 + power * 0.06); // wings grow with each star past 3
+        parts += `<g transform="translate(${f1(sx)} ${f1(sy)}) scale(${f1(s * wing * 100) / 100} ${f1(wing * 100) / 100})"><g class="dg-wing-flap">
           <path class="dg-wing" d="M0 0 C14 -34 44 -66 82 -80 C78 -62 80 -46 88 -32 C74 -34 62 -26 58 -14 C48 -20 36 -16 30 -4 C20 -10 8 -6 0 6 Z"/>
           <path class="dg-bone" stroke-width="3.5" d="M2 0 L82 -80 M4 -4 L88 -32 M4 -2 L58 -14 M2 0 L30 -4"/>
+          ${stars >= 2 ? glowVein('M14 -14 L30 -26 L36 -22 L52 -44 L60 -42 L70 -62 M36 -22 L50 -24 L62 -20 M52 -44 L66 -40', 3.5, veinColor) : ''}
         </g></g>`;
       });
+
+      // Star 3+: spikes bursting out along both sides of the body (drawn behind it)
+      if (stars >= 3) {
+        [-1, 1].forEach(s => {
+          const angles = power >= 2 ? [-85, -70, -45, -20, 5, 30] : [-70, -45, -20, 5];
+          angles.forEach((deg) => {
+            const a = deg * Math.PI / 180;
+            const ex = 120 + s * p.bodyRx * Math.cos(a), ey = bodyCy + p.bodyRy * Math.sin(a);
+            // outward direction (ellipse normal)
+            let nx = s * Math.cos(a) / p.bodyRx, ny = Math.sin(a) / p.bodyRy;
+            const nl = Math.hypot(nx, ny); nx /= nl; ny /= nl;
+            const len = (deg === -45 ? 26 : 20) * (1 + power * 0.1), half = 9 + power;
+            const bx = ex - nx * 4, by = ey - ny * 4;
+            parts += `<path class="dg-horn dg-outline" d="M${f1(bx - ny * half)} ${f1(by + nx * half)} L${f1(ex + nx * len)} ${f1(ey + ny * len)} L${f1(bx + ny * half)} ${f1(by - nx * half)} Z"/>`;
+          });
+        });
+      }
 
       // Feet, body, belly
       [-1, 1].forEach(s => {
@@ -2253,6 +2402,16 @@
         const y = bcy + o * bry, w = brx * Math.sqrt(1 - o * o) * 0.85;
         parts += `<path d="M${f1(120 - w)} ${f1(y)} Q120 ${f1(y + 5)} ${f1(120 + w)} ${f1(y)}" stroke="rgb(var(--dragon-shade))" stroke-width="2.5" fill="none" opacity="0.45" stroke-linecap="round"/>`;
       });
+      // Star 2+: glowing veins and cracks across the skin
+      if (stars >= 2) {
+        [-1, 1].forEach(s => {
+          const x0 = 120 + s * p.bodyRx * 0.88, y0 = bodyCy - p.bodyRy * 0.35;
+          parts += glowVein(`M${f1(x0)} ${f1(y0)} L${f1(x0 - s * 9)} ${f1(y0 + 10)} L${f1(x0 - s * 5)} ${f1(y0 + 22)} L${f1(x0 - s * 13)} ${f1(y0 + 34)} M${f1(x0 - s * 9)} ${f1(y0 + 10)} L${f1(x0 - s * 17)} ${f1(y0 + 7)}`, 4.5, veinColor);
+        });
+        const cy0 = bcy - bry * 0.75;
+        parts += glowVein(`M120 ${f1(cy0)} L113 ${f1(cy0 + 14)} L123 ${f1(cy0 + 24)} L116 ${f1(cy0 + 40)} M123 ${f1(cy0 + 24)} L133 ${f1(cy0 + 30)}`, 4, veinColor);
+      }
+
       // Little arms resting on the belly
       [-1, 1].forEach(s => {
         const ax = 120 + s * p.bodyRx * 0.55, ay = bodyCy - p.bodyRy * 0.05;
@@ -2263,14 +2422,32 @@
       // Mega flame crest behind the head
       if (p.mega) {
         const cl = 120 - p.headRx * 0.95, cr = 120 + p.headRx * 0.95, by = headCy - p.headRy * 0.2;
-        parts += `<g class="dg-crest"><path class="dg-horn" d="M${f1(cl)} ${f1(by)} L${f1(cl - 14)} ${f1(headTop - 6)} L${f1(cl + 16)} ${f1(headTop + 6)} L${f1(cl + 18)} ${f1(headTop - 34)} L${f1(120 - 10)} ${f1(headTop)} L120 ${f1(headTop - 48)} L${f1(120 + 10)} ${f1(headTop)} L${f1(cr - 18)} ${f1(headTop - 34)} L${f1(cr - 16)} ${f1(headTop + 6)} L${f1(cr + 14)} ${f1(headTop - 6)} L${f1(cr)} ${f1(by)} Z"/></g>`;
+        const csx = 1 + power * 0.05, csy = 1 + power * 0.09; // crest flame grows taller each star past 3
+        const crestFill = warm ? ` style="fill:${warm.outer}"` : '';
+        parts += `<g transform="translate(120 ${f1(by)}) scale(${f1(csx * 100) / 100} ${f1(csy * 100) / 100}) translate(-120 ${f1(-by)})"><g class="dg-crest"><path class="dg-horn"${crestFill} d="M${f1(cl)} ${f1(by)} L${f1(cl - 14)} ${f1(headTop - 6)} L${f1(cl + 16)} ${f1(headTop + 6)} L${f1(cl + 18)} ${f1(headTop - 34)} L${f1(120 - 10)} ${f1(headTop)} L120 ${f1(headTop - 48)} L${f1(120 + 10)} ${f1(headTop)} L${f1(cr - 18)} ${f1(headTop - 34)} L${f1(cr - 16)} ${f1(headTop + 6)} L${f1(cr + 14)} ${f1(headTop - 6)} L${f1(cr)} ${f1(by)} Z"/></g></g>`;
       }
 
       // Horns
-      const h = p.horn;
+      const h = p.horn * (1 + power * 0.05); // all horns grow with each star past 3
+      // Extra horn pairs: [x across head, y on head, tilt, size]. Star 3 adds the cheek
+      // horns, then stars 4–7 each add another pair.
+      const EXTRA_HORNS = [
+        [0.88, 0.05, 72, 0.9],    // star 3: cheeks
+        [0.22, -0.9, 12, 0.65],   // star 4: small top horns
+        [0.72, -0.5, 40, 0.8],    // star 5: upper sides
+        [0.97, -0.22, 100, 0.65], // star 6: wide side horns
+        [0.6, 0.75, 150, 0.55],   // star 7: jaw horns
+      ];
+      const hornPairs = stars >= 3 ? Math.min(EXTRA_HORNS.length, 1 + power) : 0;
+      EXTRA_HORNS.slice(0, hornPairs).forEach(([xf, yf, rot, size]) => {
+        [-1, 1].forEach(s => {
+          const hx = 120 + s * p.headRx * xf, hy = headCy + p.headRy * yf, h2 = h * size;
+          parts += `<g transform="translate(${f1(hx)} ${f1(hy)}) rotate(${s * rot}) scale(${s} 1)"><path class="dg-horn dg-outline" d="M-9 4 Q-3 ${f1(-h2 * 0.7)} ${f1(h2 * 0.45)} ${f1(-h2)} Q${f1(h2 * 0.1)} ${f1(-h2 * 0.4)} 9 2 Z"/></g>`;
+        });
+      });
       [-1, 1].forEach(s => {
         const hx = 120 + s * p.headRx * 0.5, hy = headCy - p.headRy * 0.7;
-        parts += `<g transform="translate(${f1(hx)} ${f1(hy)}) scale(${s} 1)"><path class="dg-horn" d="M-9 4 Q-4 ${f1(-h * 0.7)} ${f1(h * 0.45)} ${-h} Q${f1(h * 0.1)} ${f1(-h * 0.4)} 9 2 Z"/></g>`;
+        parts += `<g transform="translate(${f1(hx)} ${f1(hy)}) scale(${s} 1)"><path class="dg-horn" d="M-9 4 Q-4 ${f1(-h * 0.7)} ${f1(h * 0.45)} ${f1(-h)} Q${f1(h * 0.1)} ${f1(-h * 0.4)} 9 2 Z"/></g>`;
       });
       // Small crest spikes
       for (let i = 0; i < p.crest; i++) {
@@ -2292,6 +2469,23 @@
           <path class="dg-spark" d="M200 60 l10 -12 l-4 12 l10 -12"/>
           <path class="dg-spark" d="M206 170 l10 -12 l-4 12 l10 -12"/>
         </g>`;
+      }
+
+      // Star 1+: crackling lightning; star 4+: a full storm
+      // Star 1+: crackling lightning; each star past 3 adds another bolt
+      const BOLTS = [
+        'M24 62 L38 86 L28 92 L44 120 L34 124 L46 150',
+        'M218 74 L204 98 L214 104 L198 130 L208 134 L196 160',
+        'M62 -4 L74 18 L66 22 L80 48',
+        'M184 -8 L172 16 L180 20 L164 46',
+        'M8 168 L24 184 L14 190 L30 212',
+        'M234 176 L218 190 L228 196 L212 216',
+        'M-8 92 L10 106 L0 114 L18 130',
+        'M248 100 L230 112 L240 120 L222 136',
+        'M120 -46 L110 -26 L122 -22 L112 -2',
+      ];
+      if (stars >= 1) {
+        BOLTS.slice(0, 2 + power).forEach(d => { sparks += lightningBolt(d, warm ? warm.bolt : undefined); });
       }
 
       const zx = f1(120 + (p.headRx * 0.9) * p.k), zy = f1(222 - (222 - headTop) * p.k + 10);
@@ -2352,8 +2546,8 @@
         duration: formatTime(totalTimeMs, false),
         loudShare: `${loudPercent}%`,
         quietShare: `${quietPercent}%`,
-        dragonBest: DRAGON_LEVELS[state.dragonBest].name,
-        dragonFinal: DRAGON_LEVELS[state.dragonLevel].name
+        dragonBest: dragonTitle(state.dragonBest, state.dragonBestStars),
+        dragonFinal: dragonTitle(state.dragonLevel, state.dragonStars)
       };
 
       state.classLogs.unshift(newLog);
