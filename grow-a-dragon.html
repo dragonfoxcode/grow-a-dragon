@@ -549,6 +549,7 @@
           <div>
             <div class="text-xs sm:text-sm font-bold uppercase tracking-widest text-quiet-300"><span id="dragonGenLabel" class="hidden"></span>Level <span id="dragonLevelNum">1</span></div>
             <h2 id="dragonLevelName" class="text-3xl sm:text-4xl font-display font-bold text-white leading-tight">Dragon Egg</h2>
+            <div id="dragonHearts" class="flex items-center gap-1 mt-1" aria-label="Dragon hearts"></div>
           </div>
           <div id="dragonMood" class="shrink-0 px-3 py-1.5 rounded-full text-xs sm:text-sm font-bold bg-violet-950/70 text-slate-300 border border-violet-700">😴 Sleeping</div>
         </div>
@@ -572,7 +573,7 @@
           <div class="h-5 rounded-full bg-violet-950/80 border-2 border-violet-700 overflow-hidden p-0.5">
             <div id="dragonXpFill" class="h-full rounded-full bg-gradient-to-r from-quiet-500 to-quiet-300" style="width: 0%;"></div>
           </div>
-          <p id="dragonHint" class="text-xs sm:text-sm text-slate-300 mt-2 text-center font-semibold">Every 5 quiet minutes grows your dragon. 1 minute of Loud Time shrinks it a level!</p>
+          <p id="dragonHint" class="text-xs sm:text-sm text-slate-300 mt-2 text-center font-semibold">Every 5 quiet minutes grows your dragon. Too much noise and it runs off to hide!</p>
         </div>
       </section>
 
@@ -949,19 +950,29 @@
         <div class="p-3.5 rounded-2xl bg-violet-950 border border-violet-800 space-y-3">
           <div>
             <span class="text-xs font-bold uppercase tracking-wider text-quiet-300">🐉 Dragon Levels</span>
-            <p class="text-[11px] text-slate-400">Changes right away: the dragon is recalculated from the time on the clocks, so it may jump up or down. Remembered on this computer.</p>
+            <p class="text-[11px] text-slate-400">Changes right away: the dragon is recalculated from the time on the clocks, so it may jump. Remembered on this computer.</p>
           </div>
           <div>
             <div class="text-sm font-semibold text-white mb-1.5">Quiet Time to grow one level</div>
             <div id="dragonQuietPicker" class="grid grid-cols-6 gap-1.5"></div>
           </div>
           <div>
-            <div class="text-sm font-semibold text-white mb-1.5">Loud Time to shrink one level</div>
-            <div id="dragonLoudPicker" class="grid grid-cols-5 gap-1.5"></div>
+            <div class="text-sm font-semibold text-white">Hearts</div>
+            <div class="text-[11px] text-slate-400 mb-1.5">Loud Time drains hearts; Quiet Time refills them (1 heart per 30 sec). The dragon never loses a level.</div>
+            <div id="dragonHeartsPicker" class="grid grid-cols-5 gap-1.5"></div>
+          </div>
+          <div>
+            <div class="text-sm font-semibold text-white mb-1.5">Loud Time to lose one heart</div>
+            <div id="dragonHeartSecPicker" class="grid grid-cols-4 gap-1.5"></div>
+          </div>
+          <div>
+            <div class="text-sm font-semibold text-white">Quiet time to coax it out of hiding</div>
+            <div class="text-[11px] text-slate-400 mb-1.5">With no hearts left the dragon hides and stops growing until the class stays quiet this long. Noise restarts the countdown.</div>
+            <div id="dragonHidePicker" class="grid grid-cols-5 gap-1.5"></div>
           </div>
           <div>
             <div class="text-sm font-semibold text-white">Grace period after a level-up</div>
-            <div class="text-[11px] text-slate-400 mb-1.5">A short burst of excitement right after a level-up won't shrink the dragon. Nothing about this is shown on screen.</div>
+            <div class="text-[11px] text-slate-400 mb-1.5">A short burst of excitement right after a level-up won't cost hearts. Nothing about this is shown on screen.</div>
             <div id="dragonGracePicker" class="grid grid-cols-5 gap-1.5"></div>
           </div>
           <div class="flex items-center justify-between gap-2 pt-1">
@@ -1632,6 +1643,9 @@
       dragonProgress: 0, // in levels, e.g. 2.4 = Baby Dragon, 40% to the next level
       dragonGraceMs: 0,  // hidden grace period after a level-up: noise doesn't shrink the dragon (nothing shown)
       dragonHistory: [], // [side, ms] stretches since the last reset, so the dragon can be recalculated
+      dragonHearts: 3,   // can be fractional while draining/refilling
+      dragonHiding: false,
+      dragonCoaxMs: 0,   // quiet time so far while hiding
       dragonLevel: 0,
       dragonBest: 0,
       dragonFamily: 0,    // grown dragons that reached the final form and laid an egg
@@ -1643,14 +1657,18 @@
       classLogs: []
     };
 
-    // Dragon levels: grows one level per X quiet minutes, shrinks one level per Y loud minutes.
-    // Teachers can change X, Y and the hidden grace period in Settings (saved on this computer).
-    const DRAGON_DEFAULTS = { quietMin: 5, loudMin: 1, graceSec: 10 };
+    // Dragon levels: grows one level per X quiet minutes. Loud Time never takes levels away:
+    // it drains hearts, and with no hearts left the dragon hides (no growth) until the
+    // class stays quiet long enough to coax it out. All of this is set in Settings.
+    const DRAGON_DEFAULTS = { quietMin: 5, hearts: 3, heartSec: 20, hideSec: 30, graceSec: 10 };
     const DRAGON_OPTIONS = {
       quietMin: [1, 2, 3, 5, 10, 15],
-      loudMin: [0.5, 1, 2, 3, 5],
+      hearts: [1, 2, 3, 4, 5],
+      heartSec: [10, 20, 30, 60],
+      hideSec: [15, 30, 60, 90, 120],
       graceSec: [0, 5, 10, 15, 20],
     };
+    const HEART_REFILL_MS = 30000; // Quiet Time refills one heart every 30 seconds
     const dragonSettings = { ...DRAGON_DEFAULTS };
     try {
       const saved = JSON.parse(localStorage.getItem('quietloud-dragon') || '{}');
@@ -1659,7 +1677,43 @@
       });
     } catch (e) {}
     const quietLevelMs = () => dragonSettings.quietMin * 60000;
-    const loudLevelMs = () => dragonSettings.loudMin * 60000;
+    const heartMs = () => dragonSettings.heartSec * 1000;
+    const hideMs = () => dragonSettings.hideSec * 1000;
+
+    // One step of the dragon rules, shared by the live timer and the recalculation.
+    // d = the dragon state (progress, hearts, hiding, coax time, grace). Returns 'hide',
+    // 'return' or null. Growth and egg laying are handled by the caller.
+    function stepDragon(d, side, delta) {
+      let event = null;
+      if (side === 'quiet') {
+        if (d.dragonHiding) {
+          d.dragonCoaxMs += delta;
+          if (d.dragonCoaxMs >= hideMs()) {
+            d.dragonHiding = false;
+            d.dragonCoaxMs = 0;
+            d.dragonHearts = dragonSettings.hearts;
+            event = 'return';
+          }
+        } else {
+          d.dragonProgress = Math.min(DRAGON_MAX_PROGRESS + 1, d.dragonProgress + delta / quietLevelMs());
+          d.dragonHearts = Math.min(dragonSettings.hearts, d.dragonHearts + delta / HEART_REFILL_MS);
+        }
+      } else if (side === 'loud') {
+        if (d.dragonHiding) {
+          d.dragonCoaxMs = 0; // noise scares it again
+        } else if (d.dragonGraceMs <= 0) {
+          d.dragonHearts -= delta / heartMs();
+          if (d.dragonHearts <= 0) {
+            d.dragonHearts = 0;
+            d.dragonHiding = true;
+            d.dragonCoaxMs = 0;
+            event = 'hide';
+          }
+        }
+      }
+      if (d.dragonGraceMs > 0) d.dragonGraceMs = Math.max(0, d.dragonGraceMs - delta);
+      return event;
+    }
     // Levels 0–5 grow the dragon up to MEGA; levels 6–12 are Mega transformations.
     // Reaching the final form (level 12) lays an egg: the grown dragon joins the
     // family and a new dragon starts. Progress is counted in levels.
@@ -1826,6 +1880,7 @@
       dragonLevelNum: document.getElementById('dragonLevelNum'),
       dragonLevelName: document.getElementById('dragonLevelName'),
       dragonFamily: document.getElementById('dragonFamily'),
+      dragonHearts: document.getElementById('dragonHearts'),
       galleryModal: document.getElementById('galleryModal'),
       dragonGenLabel: document.getElementById('dragonGenLabel'),
       dragonMood: document.getElementById('dragonMood'),
@@ -1983,19 +2038,11 @@
           if (last && last[0] === state.activeTimer) last[1] += delta;
           else state.dragonHistory.push([state.activeTimer, delta]);
 
-          if (state.activeTimer === 'loud') {
-            state.loudElapsedMs += delta;
-            if (state.dragonGraceMs <= 0) {
-              state.dragonProgress = Math.max(0, state.dragonProgress - delta / loudLevelMs());
-            }
-          } else if (state.activeTimer === 'quiet') {
-            state.quietElapsedMs += delta;
-            state.dragonProgress = Math.min(DRAGON_MAX_PROGRESS + 1, state.dragonProgress + delta / quietLevelMs());
-          }
-          if (state.dragonGraceMs > 0) {
-            state.dragonGraceMs -= delta;
-            if (state.dragonGraceMs <= 0) { state.dragonGraceMs = 0; updateDragonMood(); }
-          }
+          if (state.activeTimer === 'loud') state.loudElapsedMs += delta;
+          else if (state.activeTimer === 'quiet') state.quietElapsedMs += delta;
+          const dragonEvent = stepDragon(state, state.activeTimer, delta);
+          if (dragonEvent === 'hide') dragonRanOff();
+          else if (dragonEvent === 'return') dragonCameBack();
 
           state.secondTracker += delta;
           if (state.secondTracker >= 1000) {
@@ -2100,6 +2147,9 @@
       state.dragonProgress = 0;
       state.dragonGraceMs = 0;
       state.dragonHistory = [];
+      state.dragonHearts = dragonSettings.hearts;
+      state.dragonHiding = false;
+      state.dragonCoaxMs = 0;
       state.dragonLevel = 0;
       state.dragonBest = 0;
       state.dragonFamily = 0;
@@ -2403,6 +2453,27 @@
       showToast('quiet', miniDragon(DRAGON_TOP_LEVEL, parent), top.title, `${top.sub} It laid an egg… Dragon #${n} starts growing now!`);
     }
 
+    // No hearts left: the dragon runs off and hides
+    function dragonRanOff() {
+      renderDragon();
+      updateDragonMood();
+      stagePuff();
+      sound.playLevelDown();
+      addMilestone('loud', '🙈', 'Too loud! The dragon ran off to hide');
+      showToast('loud', '🙈', 'Oh no! Too loud…', `Your dragon ran off to hide! Stay quiet for ${hideText()} to coax it back.`);
+    }
+    // Quiet long enough: it comes back with full hearts
+    function dragonCameBack() {
+      renderDragon();
+      updateDragonMood();
+      replayAnimation(dom.dragonWrap, 'dg-evolve', 1200);
+      spawnStageParticles(['💖', '✨'], 8);
+      sound.playQuietMilestone();
+      addMilestone('quiet', '💖', 'The dragon came back out!');
+      showToast('quiet', miniDragon(state.dragonLevel), 'Your dragon came back!', 'Thanks for being so quiet. Hearts restored!');
+    }
+    const hideText = () => dragonSettings.hideSec >= 60 ? `${dragonSettings.hideSec / 60} minute${dragonSettings.hideSec === 60 ? '' : 's'}` : `${dragonSettings.hideSec} seconds`;
+
     function addMilestone(side, icon, label) {
       const clock = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       state.milestones.unshift({ side, icon, label, clock });
@@ -2437,7 +2508,8 @@
       const entry = currentDragon(), sp = speciesOf(entry);
       updateScene(level === 0 ? 'neutral' : entry.species);
       Object.entries(sp.colors).forEach(([k, v]) => dom.dragonWrap.style.setProperty(`--dragon-${k}`, v));
-      dom.dragonSvg.innerHTML = dragonArtFor(level, entry);
+      dom.dragonSvg.innerHTML = state.dragonHiding ? hidingArt(level, entry) : dragonArtFor(level, entry);
+      renderHearts();
       dom.dragonWrap.classList.toggle('is-mega', level >= DRAGON_MEGA_LEVEL);
       // Bigger Mega forms: a glow in the dragon type's colors that deepens and widens
       const warm = megaWarm(stars, sp);
@@ -2481,6 +2553,19 @@
       updateDragonBar();
     }
 
+    // Hearts under the dragon's name; partly filled while draining or refilling
+    let lastHeartsKey = '';
+    function renderHearts() {
+      const max = dragonSettings.hearts, h = state.dragonHearts;
+      const key = `${max}:${h.toFixed(2)}:${state.dragonHiding}`;
+      if (key === lastHeartsKey) return;
+      lastHeartsKey = key;
+      const heart = (fill, i) => `<svg viewBox="0 0 24 24" class="w-5 h-5 sm:w-6 sm:h-6"><defs><clipPath id="hc${i}"><rect x="0" y="${(24 * (1 - fill)).toFixed(1)}" width="24" height="24"/></clipPath></defs>
+        <path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.6 4.5c2.1 0 3.6 1.2 5.4 3.2 1.8-2 3.3-3.2 5.4-3.2 3.6 0 5.7 3.9 4.2 7.3C19.5 16.4 12 21 12 21z" fill="rgb(var(--base-950) / 0.6)" stroke="#fda4af" stroke-width="1.6"/>
+        <path clip-path="url(#hc${i})" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.6 4.5c2.1 0 3.6 1.2 5.4 3.2 1.8-2 3.3-3.2 5.4-3.2 3.6 0 5.7 3.9 4.2 7.3C19.5 16.4 12 21 12 21z" fill="#f43f5e"/></svg>`;
+      dom.dragonHearts.innerHTML = Array.from({ length: max }, (_, i) => heart(Math.max(0, Math.min(1, h - i)), i)).join('');
+    }
+
     function updateDragonBar() {
       const p = state.dragonProgress;
       const level = state.dragonLevel;
@@ -2492,19 +2577,22 @@
       dom.dragonXpFill.style.width = `${pct.toFixed(2)}%`;
       dom.dragonXpFill.classList.toggle('xp-draining', draining);
 
+      renderHearts();
       let label, time;
-      if (draining) {
-        label = '⚠️ Too loud! Power draining…';
-        if (level > 0) time = `shrinks in ${formatShort((p - levelStart) * loudLevelMs())}`;
-        else time = p > 0 ? 'egg cooling down' : '';
+      if (state.dragonHiding) {
+        label = '🙈 Hiding! Stay quiet to coax it out';
+        time = `${formatShort(hideMs() - state.dragonCoaxMs)} of quiet`;
+      } else if (draining) {
+        label = '⚠️ Too loud! Hearts draining…';
+        time = `hides in ${formatShort(state.dragonHearts * heartMs())}`;
       } else {
         label = `Next: ${levelInfo(level + 1, currentDragon(), true).name}`;
         time = `${formatShort((level + 1 - p) * quietLevelMs())} of quiet`;
       }
       if (dom.dragonNextLabel.textContent !== label) dom.dragonNextLabel.textContent = label;
       if (dom.dragonNextTime.textContent !== time) dom.dragonNextTime.textContent = time;
-      dom.dragonNextLabel.classList.toggle('text-loud-300', draining);
-      dom.dragonNextLabel.classList.toggle('text-quiet-200', !draining);
+      dom.dragonNextLabel.classList.toggle('text-loud-300', draining || state.dragonHiding);
+      dom.dragonNextLabel.classList.toggle('text-quiet-200', !draining && !state.dragonHiding);
     }
 
     function updateDragonMood() {
@@ -2519,7 +2607,10 @@
       dom.dragonStage.classList.toggle('glow-quiet', mode === 'quiet');
 
       const base = 'shrink-0 px-3 py-1.5 rounded-full text-xs sm:text-sm font-bold border ';
-      if (mode === 'loud') {
+      if (state.dragonHiding) {
+        dom.dragonMood.className = base + 'bg-amber-500/20 text-amber-200 border-amber-400';
+        dom.dragonMood.textContent = '🙈 Hiding!';
+      } else if (mode === 'loud') {
         dom.dragonMood.className = base + 'bg-loud-500 text-white border-loud-400';
         dom.dragonMood.textContent = '😟 Too loud!';
       } else if (mode === 'quiet') {
@@ -2588,6 +2679,27 @@
       4: { k: 0.98, headRx: 42, headRy: 37, bodyRx: 48, bodyRy: 56, eye: 12, wing: 1.05, horn: 30, tail: 1, crest: 3, brows: true },
       5: { k: 0.98, headRx: 42, headRy: 37, bodyRx: 48, bodyRy: 56, eye: 12, wing: 1.12, horn: 32, tail: 1, crest: 0, brows: true, mega: true },
     };
+
+    // The dragon hiding behind a big rock: eyes and tail tip peek out (the egg just peeks over)
+    function hidingArt(level, entry) {
+      const sp = speciesOf(entry);
+      const rock = `<path d="M34 224 C22 176 50 124 104 114 C150 106 204 128 210 176 C214 200 210 214 204 224 Z" fill="#64748b"/>
+        <path d="M150 116 C188 126 210 150 210 178 C212 200 208 214 204 224 L160 224 C176 190 172 150 150 116 Z" fill="#475569"/>
+        <path d="M70 150 C80 134 98 126 116 124" stroke="#94a3b8" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.7"/>`;
+      let peek;
+      if (level === 0) {
+        peek = `<g transform="rotate(-12 150 110)"><path class="dg-belly" d="M126 130 C126 98 140 80 152 80 C164 80 178 98 178 130 Z"/><circle class="dg-body" cx="146" cy="100" r="4"/><circle class="dg-body" cx="160" cy="112" r="3"/></g>`;
+      } else {
+        const eye = (x) => `<ellipse cx="${x}" cy="104" rx="7" ry="8.5" fill="white"/><circle cx="${x + 1.5}" cy="106" r="4.6" class="dg-ink"/><circle cx="${x - 1}" cy="102.5" r="1.6" fill="white"/>`;
+        peek = `<path class="dg-horn" d="M98 92 l4 -14 l7 12 Z"/><path class="dg-horn" d="M136 92 l-4 -14 l-7 12 Z"/>
+          <ellipse cx="118" cy="112" rx="32" ry="24" class="dg-body"/>
+          <g class="dg-eyes">${eye(106)}${eye(130)}</g>
+          <path d="M97 98 L112 92 M139 98 L124 92" class="dg-line" stroke-width="2.6"/>`;
+        peek += `<g class="dg-tail"><path d="M200 214 C222 212 232 200 230 184" class="dg-tail-stroke" stroke-width="12"/>
+          <path class="dg-wing" d="M220 188 L230 164 L240 188 L230 183 Z"/></g>`;
+      }
+      return `<g style="${speciesStyle(sp)}"><ellipse cx="120" cy="226" rx="96" ry="8" class="dg-ink" opacity="0.28"/>${peek}${rock}</g>`;
+    }
 
     // Levels past Mega use the Mega drawing with that many transformations
     // Wrapped in the dragon type's colors so it looks right anywhere (stage, pop-ups, family, gallery)
@@ -3401,6 +3513,7 @@
       renderMilestones();
       renderDragonSettings();
       renderSilencePicker();
+      state.dragonHearts = dragonSettings.hearts;
       renderDragon();
       setTheme(document.documentElement.dataset.theme || 'galaxy', false);
       setAppearance(document.documentElement.dataset.appearance || 'auto', false);
@@ -3724,7 +3837,9 @@
     const minutesText = (m) => m < 1 ? `${m * 60} seconds` : `${m} minute${m === 1 ? '' : 's'}`;
     const dragonOptionLabel = {
       quietMin: (v) => `${v} min`,
-      loudMin: (v) => v < 1 ? `${v * 60} sec` : `${v} min`,
+      hearts: (v) => `${v} ❤️`,
+      heartSec: (v) => v === 60 ? '1 min' : `${v} sec`,
+      hideSec: (v) => v >= 60 ? `${v / 60} min` : `${v} sec`,
       graceSec: (v) => v === 0 ? 'Off' : `${v} sec`,
     };
 
@@ -3735,7 +3850,7 @@
     // Changing the grow/shrink timing recalculates the dragon from the real
     // Quiet/Loud time so far, as if the new timing had been used all along.
     function setDragonSettings(changes) {
-      const timingChanged = ['quietMin', 'loudMin'].some(k => k in changes && changes[k] !== dragonSettings[k]);
+      const timingChanged = ['quietMin', 'hearts', 'heartSec', 'hideSec'].some(k => k in changes && changes[k] !== dragonSettings[k]);
       Object.assign(dragonSettings, changes);
       try { localStorage.setItem('quietloud-dragon', JSON.stringify(dragonSettings)); } catch (e) {}
       if (state.dragonGraceMs > dragonSettings.graceSec * 1000) {
@@ -3748,39 +3863,41 @@
     }
 
     // Replays the recorded stretches with the same rules as the live timer:
-    // Loud drains, the egg is the floor, and level-ups start the grace period.
+    // hearts, hiding, growth, egg laying, and the grace period after level-ups.
     function recalculateDragon() {
-      if (state.dragonHistory.length === 0) return;
-      const STEP = 100;
       const graceMs = dragonSettings.graceSec * 1000;
-      let p = 0, level = 0, best = 0, grace = 0, family = 0;
+      const d = { dragonProgress: 0, dragonHearts: dragonSettings.hearts, dragonHiding: false, dragonCoaxMs: 0, dragonGraceMs: 0 };
+      if (state.dragonHistory.length === 0) {
+        state.dragonHearts = Math.min(state.dragonHearts, dragonSettings.hearts);
+        if (!state.dragonHiding) state.dragonHearts = dragonSettings.hearts;
+        renderDragon();
+        return;
+      }
+      const STEP = 100;
+      let level = 0, best = 0, family = 0;
       state.dragonHistory.forEach(([side, ms]) => {
         for (let left = ms; left > 0; left -= STEP) {
-          const d = Math.min(STEP, left);
-          if (side === 'quiet') p = p + d / quietLevelMs();
-          else if (grace <= 0) p = Math.max(0, p - d / loudLevelMs());
-          if (grace > 0) grace = Math.max(0, grace - d);
-          if (p >= DRAGON_MAX_PROGRESS) {
+          stepDragon(d, side, Math.min(STEP, left));
+          if (d.dragonProgress >= DRAGON_MAX_PROGRESS) {
             family++;
-            p -= DRAGON_MAX_PROGRESS;
+            d.dragonProgress -= DRAGON_MAX_PROGRESS;
             level = 0; best = 0;
-            grace = graceMs;
+            d.dragonGraceMs = graceMs;
           }
-          const lvl = Math.min(DRAGON_TOP_LEVEL - 1, Math.floor(p));
-          if (lvl > level) grace = graceMs;
+          const lvl = Math.min(DRAGON_TOP_LEVEL - 1, Math.floor(d.dragonProgress));
+          if (lvl > level) d.dragonGraceMs = graceMs;
           level = lvl;
           best = Math.max(best, lvl);
         }
       });
-      state.dragonProgress = p;
-      state.dragonGraceMs = grace;
+      Object.assign(state, d);
       state.dragonLevel = level;
       state.dragonBest = best;
       state.dragonFamily = family;
       renderDragon();
       updateDragonMood();
       const who = family > 0 ? `dragon #${family + 1} is now` : 'dragon is now';
-      addMilestone('quiet', '🔄', `Level timing changed: ${who} ${levelName(level)}`);
+      addMilestone('quiet', '🔄', `Dragon settings changed: ${who} ${levelName(level)}${state.dragonHiding ? ' (hiding)' : ''}`);
     }
 
     function renderSilencePicker() {
@@ -3801,7 +3918,7 @@
     }
 
     function renderDragonSettings() {
-      const pickers = { quietMin: 'dragonQuietPicker', loudMin: 'dragonLoudPicker', graceSec: 'dragonGracePicker' };
+      const pickers = { quietMin: 'dragonQuietPicker', hearts: 'dragonHeartsPicker', heartSec: 'dragonHeartSecPicker', hideSec: 'dragonHidePicker', graceSec: 'dragonGracePicker' };
       Object.entries(pickers).forEach(([key, id]) => {
         const el = document.getElementById(id);
         el.innerHTML = DRAGON_OPTIONS[key].map(v => {
@@ -3815,11 +3932,10 @@
         });
       });
 
-      const q = dragonSettings.quietMin, l = dragonSettings.loudMin;
-      const loudPhrase = minutesText(l);
-      dom.dragonHint.textContent = `Every ${q === 1 ? 'quiet minute' : `${q} quiet minutes`} grows your dragon. ${loudPhrase[0].toUpperCase() + loudPhrase.slice(1)} of Loud Time shrinks it a level!`;
+      const q = dragonSettings.quietMin, hearts = dragonSettings.hearts;
+      dom.dragonHint.textContent = `Every ${q === 1 ? 'quiet minute' : `${q} quiet minutes`} grows your dragon. Too much noise and it runs off to hide!`;
       document.getElementById('dragonRulesShort').textContent =
-        `Grows every ${q} quiet min · shrinks after ${dragonOptionLabel.loudMin(l)} loud`;
+        `Grows every ${q} quiet min · ${hearts} heart${hearts === 1 ? '' : 's'} · hides when they run out`;
       document.getElementById('dragonRulesSummary').textContent =
         `Mega Dragon at ${q * DRAGON_MEGA_LEVEL} quiet min · final form (and a surprise) at ${q * DRAGON_TOP_LEVEL} min.`;
     }
