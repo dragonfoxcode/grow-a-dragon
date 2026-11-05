@@ -1093,15 +1093,20 @@
         return performance.now() < this.busyUntil;
       }
 
+      // Make sure audio is running. Browsers can leave it paused ("suspended", or
+      // "interrupted" in Safari) after sleep, a speaker/projector change, or before the
+      // first click; a closed one is replaced with a new one.
       initContext() {
+        if (this.ctx && this.ctx.state === 'closed') this.ctx = null;
         if (!this.ctx) {
           const AudioContextClass = window.AudioContext || window.webkitAudioContext;
           if (AudioContextClass) {
             this.ctx = new AudioContextClass();
           }
         }
-        if (this.ctx && this.ctx.state === 'suspended') {
-          this.ctx.resume();
+        if (this.ctx && this.ctx.state !== 'running') {
+          const r = this.ctx.resume();
+          if (r && r.catch) r.catch(() => {});
         }
       }
 
@@ -1719,7 +1724,8 @@
     // family and a new dragon starts. Progress is counted in levels.
     const DRAGON_MEGA_LEVEL = 5;
     const DRAGON_TOP_LEVEL = 12;
-    const DRAGON_MAX_PROGRESS = DRAGON_TOP_LEVEL;
+    // The King/Queen stays for one full interval before laying the next egg
+    const DRAGON_MAX_PROGRESS = DRAGON_TOP_LEVEL + 1;
     // The Mega artwork has 10 power steps ("stars" inside the drawing code only).
     // Each level past Mega jumps ahead by more of them, so every change is bigger than the last.
     const MEGA_FORMS = 10;
@@ -2387,7 +2393,7 @@
         layDragonEgg();
         return;
       }
-      const target = Math.min(DRAGON_TOP_LEVEL - 1, Math.max(0, Math.floor(state.dragonProgress)));
+      const target = Math.min(DRAGON_TOP_LEVEL, Math.max(0, Math.floor(state.dragonProgress)));
       if (target === state.dragonLevel) return;
 
       const grew = target > state.dragonLevel;
@@ -2407,7 +2413,8 @@
         startGracePeriod();
         if (firstTime) {
           sound.playLevelUp(drama);
-          addMilestone('quiet', '🐉', `Level ${target + 1}: ${lvl.name}`);
+          if (target === DRAGON_TOP_LEVEL) addToGallery(currentDragon());
+          addMilestone('quiet', target === DRAGON_TOP_LEVEL ? '👑' : '🐉', `Level ${target + 1}: ${lvl.name}`);
           showToast('quiet', miniDragon(target), lvl.title, lvl.sub);
         } else {
           sound.playQuietMilestone();
@@ -2432,25 +2439,23 @@
     // The final form: the dragon becomes a King or Queen, lays an egg, and a new dragon starts
     function layDragonEgg() {
       const parent = currentDragon();
-      const top = levelInfo(DRAGON_TOP_LEVEL, parent);
+      const royal = levelInfo(DRAGON_TOP_LEVEL, parent).name;
       state.dragonFamily++;
       state.dragonProgress = Math.max(0, state.dragonProgress - DRAGON_MAX_PROGRESS);
       state.dragonLevel = 0;
       state.dragonBest = 0;
-      addToGallery(parent);
       renderDragon();
       replayAnimation(dom.dragonWrap, 'dg-evolve', 1200);
       replayAnimation(dom.dragonFamily, 'badge-pop', 600);
-      const drama = dragonDrama(DRAGON_TOP_LEVEL);
+      const drama = dragonDrama(DRAGON_TOP_LEVEL + 1);
       stageFlash(drama);
       stageQuake(drama);
-      spawnStageParticles(['🥚', '👑', '💖', '✨', '🌟', '⚡'], 34);
+      spawnStageParticles(['🥚', '👑', '💖', '✨', '🌟'], 30);
       startGracePeriod();
       sound.playLevelUp(drama);
       const n = state.dragonFamily + 1;
-      addMilestone('quiet', '👑', `Level ${DRAGON_TOP_LEVEL + 1}: ${top.name}`);
-      addMilestone('quiet', '🥚', `The ${top.name} laid an egg! Dragon #${n} is on the way`);
-      showToast('quiet', miniDragon(DRAGON_TOP_LEVEL, parent), top.title, `${top.sub} It laid an egg… Dragon #${n} starts growing now!`);
+      addMilestone('quiet', '🥚', `The ${royal} laid an egg! Dragon #${n} is on the way`);
+      showToast('quiet', miniDragon(0), 'A new dragon egg!', `The ${royal} laid an egg… Dragon #${n} starts growing now!`);
     }
 
     // No hearts left: the dragon runs off and hides
@@ -2586,7 +2591,7 @@
         label = '⚠️ Too loud! Hearts draining…';
         time = `hides in ${formatShort(state.dragonHearts * heartMs())}`;
       } else {
-        label = `Next: ${levelInfo(level + 1, currentDragon(), true).name}`;
+        label = level >= DRAGON_TOP_LEVEL ? 'Next: ✨ a surprise…' : `Next: ${levelInfo(level + 1, currentDragon(), true).name}`;
         time = `${formatShort((level + 1 - p) * quietLevelMs())} of quiet`;
       }
       if (dom.dragonNextLabel.textContent !== label) dom.dragonNextLabel.textContent = label;
@@ -3501,6 +3506,12 @@
        ========================================================================== */
     window.addEventListener('load', () => {
       setupEvents();
+      // Any click or key press wakes the audio, so sounds keep working after sleep
+      // or a speaker/projector change
+      const wakeAudio = () => { if (sound.enabled) sound.initContext(); };
+      document.addEventListener('pointerdown', wakeAudio, true);
+      document.addEventListener('keydown', wakeAudio, true);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden && sound.ctx) wakeAudio(); });
       setupFullscreen();
       setupGallery();
       setupMenuBackdrops();
@@ -3884,7 +3895,7 @@
             level = 0; best = 0;
             d.dragonGraceMs = graceMs;
           }
-          const lvl = Math.min(DRAGON_TOP_LEVEL - 1, Math.floor(d.dragonProgress));
+          const lvl = Math.min(DRAGON_TOP_LEVEL, Math.floor(d.dragonProgress));
           if (lvl > level) d.dragonGraceMs = graceMs;
           level = lvl;
           best = Math.max(best, lvl);
@@ -3937,7 +3948,7 @@
       document.getElementById('dragonRulesShort').textContent =
         `Grows every ${q} quiet min · ${hearts} heart${hearts === 1 ? '' : 's'} · hides when they run out`;
       document.getElementById('dragonRulesSummary').textContent =
-        `Mega Dragon at ${q * DRAGON_MEGA_LEVEL} quiet min · final form (and a surprise) at ${q * DRAGON_TOP_LEVEL} min.`;
+        `Mega Dragon at ${q * DRAGON_MEGA_LEVEL} quiet min · King/Queen at ${q * DRAGON_TOP_LEVEL} min · a surprise at ${q * DRAGON_MAX_PROGRESS} min.`;
     }
 
     /* ==========================================================================
