@@ -322,6 +322,9 @@
     @keyframes stage-flash { 0% { transform: scale(0); opacity: 1; } 100% { transform: scale(var(--flash-scale, 18)); opacity: 0; } }
     .stage-title h2, .stage-title > div > div { text-shadow: 0 2px 0 rgb(var(--base-950) / 0.8), 0 0 14px rgb(var(--base-950) / 0.9); }
     html.light .stage-title h2, html.light .stage-title > div > div { text-shadow: 0 0 10px rgb(255 255 255 / 0.9); }
+    .dg-long-name { font-size: 1.6rem !important; }
+    .dg-xlong-name { font-size: 1.35rem !important; }
+    @media (min-width: 640px) { .dg-long-name { font-size: 1.95rem !important; } .dg-xlong-name { font-size: 1.65rem !important; } }
     .stage-quake { animation: stage-quake var(--quake-time, 0.5s) linear; }
     @keyframes stage-quake {
       0%, 100% { transform: translate(0, 0); }
@@ -343,6 +346,35 @@
     .scene-star:nth-child(3n+1) { animation-delay: 2s; }
     @keyframes twinkle { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.25; } }
     html.light .scene-star { display: none; }
+    /* Dragon-type scenes: light mode washes them out so dark text stays readable */
+    .scene-wash { opacity: 0; }
+    /* Soft backdrop behind the level track and progress bar so they read on any scene */
+    .stage-bottom { background: linear-gradient(to bottom, transparent, rgb(var(--base-950) / 0.72) 40%); }
+    html.light .stage-bottom { background: linear-gradient(to bottom, transparent, rgb(255 255 255 / 0.75) 40%); }
+    html.light .scene-wash { opacity: 0.55; }
+    .scene-anim { transform-box: fill-box; transform-origin: center; }
+    .scene-snow { animation: scene-fall linear infinite; }
+    @keyframes scene-fall { from { transform: translate(0, -60px); } to { transform: translate(24px, 560px); } }
+    .scene-ember { animation: scene-rise ease-out infinite; }
+    .scene-sand { animation: scene-sand linear infinite; }
+    @keyframes scene-sand { 0% { transform: translate(0, 0); opacity: 0; } 10% { opacity: 1; } 100% { transform: translate(720px, -30px); opacity: 0; } }
+    @keyframes scene-rise { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(14px, -260px); opacity: 0; } }
+    .scene-firefly { animation: scene-firefly ease-in-out infinite; }
+    @keyframes scene-firefly { 0%, 100% { opacity: 0.1; transform: translate(0, 0); } 50% { opacity: 1; transform: translate(8px, -10px); } }
+    .scene-rain { animation: scene-rain 0.7s linear infinite; }
+    @keyframes scene-rain { from { transform: translate(0, -40px); } to { transform: translate(-30px, 520px); } }
+    .scene-flash { animation: scene-flash 7s steps(1) infinite; opacity: 0; }
+    @keyframes scene-flash { 0%, 62%, 66%, 100% { opacity: 0; } 63%, 65% { opacity: 1; } }
+    .scene-skyflash { animation: scene-skyflash 7s ease-out infinite; opacity: 0; }
+    @keyframes scene-skyflash { 0%, 62%, 70%, 100% { opacity: 0; } 63% { opacity: 0.35; } 65% { opacity: 0.12; } }
+    .scene-aurora { animation: scene-aurora 9s ease-in-out infinite alternate; }
+    @keyframes scene-aurora { from { transform: translateX(-30px); opacity: 0.35; } to { transform: translateX(30px); opacity: 0.7; } }
+    .scene-shimmer { stroke-dasharray: 18 26; animation: scene-shimmer 2.4s linear infinite; }
+    @keyframes scene-shimmer { to { stroke-dashoffset: -88; } }
+    .scene-shoot { animation: scene-shoot 6s ease-in infinite; opacity: 0; }
+    @keyframes scene-shoot { 0%, 80% { opacity: 0; transform: translate(0, 0); } 82% { opacity: 1; } 92% { opacity: 0; transform: translate(-220px, 110px); } 100% { opacity: 0; } }
+    .scene-glow { animation: scene-glow 2.2s ease-in-out infinite alternate; }
+    @keyframes scene-glow { from { opacity: 0.55; } to { opacity: 1; } }
     .dragon-wrap.is-mega svg { filter: drop-shadow(0 0 18px rgb(var(--dragon-horn) / 0.75)); }
     /* Mega forms: lightning and glowing veins (forms 4+ recolor these inline) */
     .dg-bolt-color { stroke: rgb(253 224 71); }
@@ -357,7 +389,7 @@
     .xp-draining { background-image: linear-gradient(to right, rgb(var(--loud-600)), rgb(var(--loud-400))) !important; }
 
     @media (prefers-reduced-motion: reduce) {
-      .dg-breathe, .dg-wing-flap, .dg-tail, .dg-egg-rock, .dg-aura, .dg-crest, .dg-bolt, .dg-vein, .dragon-wrap.is-loud, .scene-star { animation: none !important; }
+      .dg-breathe, .dg-wing-flap, .dg-tail, .dg-egg-rock, .dg-aura, .dg-crest, .dg-bolt, .dg-vein, .dragon-wrap.is-loud, .scene-star, .scene-snow, .scene-ember, .scene-firefly, .scene-rain, .scene-sand, .scene-flash, .scene-skyflash, .scene-aurora, .scene-shimmer, .scene-shoot, .scene-glow { animation: none !important; }
     }
   </style>
 </head>
@@ -471,7 +503,8 @@
 
       <!-- DRAGON STAGE (center) -->
       <section id="dragonStage" class="col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-1 relative flex flex-col overflow-hidden rounded-[2.5rem] border-4 border-violet-800 shadow-2xl min-h-[420px] sm:min-h-[520px]">
-        <!-- Flat 2D night scene (colors follow the theme) -->
+        <!-- Background scene: the theme's night scene for the egg, then the dragon type's own scene (built by sceneArt) -->
+        <div id="stageScene" class="absolute inset-0 transition-opacity duration-500">
         <svg class="absolute inset-0 w-full h-full" viewBox="0 0 600 500" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
           <defs>
             <linearGradient id="sceneSky" x1="0" y1="0" x2="0" y2="1">
@@ -507,6 +540,7 @@
             <path d="M190 420 l4 -10 l4 10 Z"/><path d="M420 418 l4 -11 l4 11 Z"/>
           </g>
         </svg>
+        </div>
         <!-- Red glow while Loud Time drains the dragon -->
         <div id="stageLoudTint" class="aura-loud absolute inset-0 opacity-0 pointer-events-none transition-opacity duration-500"></div>
 
@@ -529,7 +563,7 @@
         </div>
 
         <!-- Level track + progress to next level -->
-        <div class="relative z-10 px-4 sm:px-6 pb-5 pt-2">
+        <div class="stage-bottom relative z-10 px-4 sm:px-6 pb-5 pt-6">
           <div id="dragonTrack" class="flex gap-1 sm:gap-1.5 mb-3"></div>
           <div class="flex items-center justify-between gap-2 text-sm sm:text-base font-bold mb-1.5">
             <span id="dragonNextLabel" class="text-quiet-200 truncate">Next: Hatching</span>
@@ -564,7 +598,7 @@
           <div id="loudTimeDisplay" class="timer-digits font-display numeral-display font-bold text-white select-none">00:00.0</div>
           <p class="text-sm sm:text-base text-pink-300/90 mt-2 font-semibold" id="loudSubDetails">Too noisy? Tap here!</p>
 
-          <!-- 10-second silence countdown (shown while Loud Time runs with the mic on) -->
+          <!-- Quiet-down countdown (shown while Loud Time runs with the mic on; length set in Settings) -->
           <div id="silenceBox" class="hidden w-full mt-3 rounded-2xl bg-quiet-500/10 border-2 border-quiet-400/50 px-3 py-2 text-left">
             <div class="flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-quiet-300">
               <span>🤫 Stay quiet to go back</span>
@@ -824,7 +858,10 @@
         </div>
         <button id="closeGalleryBtn" class="shrink-0 flex items-center gap-1.5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-violet-800 transition"><span class="kbd" title="Press Esc to close">Esc</span><span>✕</span></button>
       </div>
-      <div id="galleryGrid" class="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 overflow-y-auto pr-1"></div>
+      <div class="mt-4 overflow-y-auto pr-1">
+        <div id="galleryNow"></div>
+        <div id="galleryGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+      </div>
       <div class="mt-4 pt-3 border-t border-violet-800 flex items-center justify-between gap-2">
         <p class="text-[11px] text-slate-500">Saved on this computer for each Class / Period name.</p>
         <button id="clearGalleryBtn" class="text-xs px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-violet-700 font-semibold transition">Clear this class's gallery</button>
@@ -941,6 +978,12 @@
               <p class="text-[11px] text-slate-400">Automatically switch to Loud Time if room gets noisy</p>
             </div>
             <input type="checkbox" id="modalMicToggle" class="w-4 h-4 accent-cyan-400 cursor-pointer">
+          </div>
+
+          <div class="mt-3">
+            <div class="text-sm font-semibold text-white">Quiet-down time</div>
+            <div class="text-[11px] text-slate-400 mb-1.5">How long the room must stay quiet before Loud Time switches back to Quiet Time.</div>
+            <div id="silencePicker" class="grid grid-cols-5 gap-1.5"></div>
           </div>
 
           <div class="mt-3 flex items-center justify-between">
@@ -1345,7 +1388,14 @@
        ROOM LOUDNESS MICROPHONE DETECTOR (Time-Domain Waveform + Boost)
        ========================================================================== */
     // How long the room must stay continuously quiet before Loud Time hands back to Quiet Time
-    const SILENCE_TO_QUIET_MS = 10000;
+    // Teachers can change it in Settings (saved on this computer)
+    const SILENCE_OPTIONS = [5, 10, 15, 20, 30];
+    let silenceToQuietSec = 10;
+    try {
+      const saved = Number(localStorage.getItem('quietloud-silence'));
+      if (SILENCE_OPTIONS.includes(saved)) silenceToQuietSec = saved;
+    } catch (e) {}
+    const silenceToQuietMs = () => silenceToQuietSec * 1000;
 
     class MicrophoneLoudnessMeter {
       constructor(onLoudThresholdCrossed, onQuietThresholdRestored, onSilenceProgress) {
@@ -1461,7 +1511,7 @@
         }
       }
 
-      // Restart the 10-second quiet countdown (e.g. whenever Loud Time begins)
+      // Restart the quiet-down countdown (e.g. whenever Loud Time begins)
       resetSilence() {
         this.quietSince = null;
         if (this.onSilenceProgress) this.onSilenceProgress(0);
@@ -1507,7 +1557,7 @@
         const now = performance.now();
         if (sound.isPlaying()) {
           // The app's own chime or fanfare is playing: don't count it as class noise.
-          // The 10-second quiet countdown keeps going through it.
+          // The quiet-down countdown keeps going through it.
           this.loudConsecutiveCount = 0;
           if (this.quietSince !== null && this.onSilenceProgress) this.onSilenceProgress(now - this.quietSince);
         } else if (scaled >= this.threshold) {
@@ -1522,7 +1572,7 @@
           if (this.quietSince === null) this.quietSince = now;
           const quietMs = now - this.quietSince;
           if (this.onSilenceProgress) this.onSilenceProgress(quietMs);
-          if (quietMs >= SILENCE_TO_QUIET_MS) {
+          if (quietMs >= silenceToQuietMs()) {
             this.onQuiet();
           }
         }
@@ -1721,6 +1771,19 @@
           ['Storm Dragon', 'Storm', 'Giant wings summon a storm!'],
           ['Thunderstorm Dragon', 'Thunder', 'A crown of roaring thunder!'],
           ['Supercell Dragon', 'Supercell', 'A blinding core of pure lightning!'],
+        ],
+      },
+      desert: {
+        name: 'Desert Dragon', short: 'Desert', feature: 'desert',
+        colors: { body: '230 190 120', shade: '190 140 80', belly: '255 240 205', wing: '214 120 60', 'wing-dark': '150 75 35', horn: '255 250 235', cheek: '255 170 130', ink: '40 25 10' },
+        ramp: ['#fef3c7', '#fde68a', '#fcd34d', '#fbbf24', '#f59e0b', '#ea580c', '#c2410c'], bolt: '#fff7ed', core: '#fffbeb',
+        forms: [
+          ['Dune Dragon', 'Dune', 'Shimmering sand swirls across its scales!'],
+          ['Cactus Dragon', 'Cactus', 'Prickly cactus spikes burst out!'],
+          ['Mirage Dragon', 'Mirage', 'A shimmering mirage aura!'],
+          ['Sandstorm Dragon', 'Sandstorm', 'Giant wings whip up a sandstorm!'],
+          ['Scorch Dragon', 'Scorch', 'A crown of blazing desert sun!'],
+          ['Solar Flare Dragon', 'Flare', 'A blinding desert sun burns at its heart!'],
         ],
       },
     };
@@ -2206,8 +2269,8 @@
       dom.loudSubDetails.classList.toggle('hidden', !!show);
       if (!show) return;
 
-      const pct = Math.min(100, (quietMs / SILENCE_TO_QUIET_MS) * 100);
-      const secondsLeft = Math.max(0, Math.ceil((SILENCE_TO_QUIET_MS - quietMs) / 1000));
+      const pct = Math.min(100, (quietMs / silenceToQuietMs()) * 100);
+      const secondsLeft = Math.max(0, Math.ceil((silenceToQuietMs() - quietMs) / 1000));
       dom.silenceFill.style.width = `${pct}%`;
       dom.silenceCountdown.textContent = `${secondsLeft}s`;
     }
@@ -2372,6 +2435,7 @@
       const level = state.dragonLevel;
       const stars = artStars(level);
       const entry = currentDragon(), sp = speciesOf(entry);
+      updateScene(level === 0 ? 'neutral' : entry.species);
       Object.entries(sp.colors).forEach(([k, v]) => dom.dragonWrap.style.setProperty(`--dragon-${k}`, v));
       dom.dragonSvg.innerHTML = dragonArtFor(level, entry);
       dom.dragonWrap.classList.toggle('is-mega', level >= DRAGON_MEGA_LEVEL);
@@ -2390,7 +2454,11 @@
           <svg viewBox="-20 -30 280 280" class="w-14 sm:w-20 h-auto overflow-visible ${i > 0 ? '-ml-5 sm:-ml-7' : ''}" aria-label="${royalName(e)}"><title>${royalName(e)}</title>${awakeArt(DRAGON_TOP_LEVEL, e)}</svg>`).join('')}
         </div>
         <div class="-mt-1"><span class="inline-block px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-violet-950/80 text-pink-300 border border-pink-500/50 whitespace-nowrap">👑 Family${fam > 1 ? ` ×${fam}` : ''}</span></div>` : '';
-      dom.dragonLevelName.textContent = levelInfo(level, entry).name;
+      const title = levelInfo(level, entry).name;
+      dom.dragonLevelName.textContent = title;
+      // Long names ("Young Lightning Dragon") get a smaller title so they stay on one line
+      dom.dragonLevelName.classList.toggle('dg-long-name', title.length > 16);
+      dom.dragonLevelName.classList.toggle('dg-xlong-name', title.length > 20);
       dom.dragonLevelName.classList.toggle('text-pink-300', level >= DRAGON_MEGA_LEVEL);
 
       // Level track: only forms the class has reached, plus the next goal, then a mystery "?"
@@ -2620,6 +2688,15 @@
           return `<path d="M120 ${f1(y)} Q117 ${f1(y - 12)} 121 ${f1(y - 22)}" stroke="rgb(var(--dragon-wing-dark))" stroke-width="3" fill="none" stroke-linecap="round"/>
             <ellipse cx="110" cy="${f1(y - 20)}" rx="11" ry="5.5" class="dg-wing dg-outline" transform="rotate(-30 110 ${f1(y - 20)})"/>
             <ellipse cx="131" cy="${f1(y - 25)}" rx="12" ry="6" class="dg-wing dg-outline" transform="rotate(25 131 ${f1(y - 25)})"/>`;
+        }
+        if (kind === 'desert') {
+          return [-1, 1].map(s => {
+            const bx = 120 + s * headRx * 0.62, by = headCy - headRy * 0.55;
+            const tx = 120 + s * headRx * 1.05, ty = headTop - 30;
+            const ox = 120 + s * headRx * 0.98, oy = headCy - headRy * 0.05;
+            return `<path class="dg-body dg-outline" d="M${f1(bx)} ${f1(by)} L${f1(tx)} ${f1(ty)} L${f1(ox)} ${f1(oy)} Z"/>
+              <path class="dg-wing" d="M${f1(bx + (ox - bx) * 0.25 + s * 3)} ${f1(by + 6)} L${f1(tx - s * 2)} ${f1(ty + 12)} L${f1(ox - s * 4)} ${f1(oy - 8)} Z" opacity="0.85"/>`;
+          }).join('');
         }
         if (kind === 'lightning') {
           const t = headTop;
@@ -3299,11 +3376,10 @@
           e.preventDefault();
           toggleFullscreen();
         } else if (e.key === 'Escape') {
-          closeGallery();
-          dom.settingsModal.classList.add('hidden');
-          dom.logsModal.classList.add('hidden');
-          dom.calibrateModal.classList.add('hidden');
-          dom.timeExpiredModal.classList.add('hidden');
+          // Esc closes an open menu first; with no menu open it leaves full screen
+          // (in full screen this only works where the browser lets us catch Esc, see lockEscape)
+          if (openMenus().length) closeAllMenus();
+          else if (fsElement()) toggleFullscreen();
         }
       });
     }
@@ -3315,6 +3391,7 @@
       setupEvents();
       setupFullscreen();
       setupGallery();
+      setupMenuBackdrops();
       startTimerLoop();
       updateDisplay();
       applyVisualState();
@@ -3323,6 +3400,7 @@
       renderLogsTable();
       renderMilestones();
       renderDragonSettings();
+      renderSilencePicker();
       renderDragon();
       setTheme(document.documentElement.dataset.theme || 'galaxy', false);
       setAppearance(document.documentElement.dataset.appearance || 'auto', false);
@@ -3336,6 +3414,145 @@
         });
       }
     });
+
+    /* ==========================================================================
+       BACKGROUND SCENES (one per dragon type; the egg keeps the theme's scene
+       so the type stays a surprise until it hatches)
+       ========================================================================== */
+    const NEUTRAL_SCENE = document.getElementById('stageScene').innerHTML;
+    let currentSceneKey = 'neutral';
+
+    // Same "random" layout every time a scene is drawn
+    function seeded(seed) {
+      let x = seed;
+      return () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
+    }
+    const sceneSky = (id, top, bottom) => `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs><rect width="600" height="500" fill="url(#${id})"/>`;
+    const sceneStars = (n, seed, maxY = 260) => {
+      const r = seeded(seed);
+      return `<g fill="white">${Array.from({ length: n }, () => `<circle class="scene-star" cx="${Math.round(r() * 600)}" cy="${Math.round(r() * maxY)}" r="${(0.8 + r() * 1.8).toFixed(1)}"/>`).join('')}</g>`;
+    };
+    // Jagged mountain range with optional snow caps: peaks = [[x, y], ...]
+    function peaks(points, base, fill, cap) {
+      const d = `M0 ${base} ` + points.map(([x, y]) => `L${x} ${y}`).join(' ') + ` L600 ${base} V500 H0 Z`;
+      let caps = '';
+      if (cap) {
+        caps = points.filter(([, y]) => y < base - 60).map(([x, y]) =>
+          `<path d="M${x - 22} ${y + 34} L${x} ${y} L${x + 22} ${y + 34} L${x + 10} ${y + 28} L${x} ${y + 36} L${x - 10} ${y + 28} Z" fill="${cap}"/>`).join('');
+      }
+      return `<path d="${d}" fill="${fill}"/>${caps}`;
+    }
+    const pine = (x, y, h, fill) => `<path d="M${x} ${y - h} L${x + h * 0.32} ${y - h * 0.45} L${x + h * 0.18} ${y - h * 0.45} L${x + h * 0.42} ${y} L${x - h * 0.42} ${y} L${x - h * 0.18} ${y - h * 0.45} L${x - h * 0.32} ${y - h * 0.45} Z" fill="${fill}"/>`;
+
+    const SCENES = {
+      ice: () => {
+        const r = seeded(11);
+        const snow = Array.from({ length: 26 }, () => `<circle class="scene-anim scene-snow" cx="${Math.round(r() * 600)}" cy="${Math.round(r() * 120)}" r="${(1.5 + r() * 2.5).toFixed(1)}" fill="white" opacity="${(0.5 + r() * 0.5).toFixed(2)}" style="animation-duration:${(7 + r() * 7).toFixed(1)}s;animation-delay:-${(r() * 14).toFixed(1)}s"/>`).join('');
+        return sceneSky('skyIce', '#081a33', '#1f4f7d') + sceneStars(14, 3) +
+          `<g class="scene-anim scene-aurora"><path d="M-40 120 Q120 60 260 110 T560 90 T700 100 L700 150 Q560 130 420 160 T120 150 T-40 170 Z" fill="#34d399" opacity="0.35"/>
+            <path d="M-40 150 Q140 100 300 140 T640 120 L640 170 Q460 160 300 180 T-40 200 Z" fill="#22d3ee" opacity="0.3"/></g>
+          <circle cx="470" cy="80" r="30" fill="#e0f2fe" opacity="0.95"/>` +
+          peaks([[60, 250], [150, 190], [230, 240], [320, 170], [410, 235], [500, 185], [580, 230]], 320, '#2c5282', '#f0f9ff') +
+          `<path d="M0 370 Q150 320 300 355 T600 345 V500 H0 Z" fill="#bcd9f2"/><path d="M0 425 Q300 395 600 425 V500 H0 Z" fill="#e8f4ff"/>` +
+          [[90, 372], [520, 362], [200, 392]].map(([x, y]) => pine(x, y, 46, '#1e3a5f')).join('') + snow;
+      },
+      river: () => {
+        const r = seeded(21);
+        const flies = Array.from({ length: 8 }, () => `<circle class="scene-anim scene-firefly" cx="${Math.round(40 + r() * 520)}" cy="${Math.round(300 + r() * 90)}" r="2.2" fill="#a7f3d0" style="animation-duration:${(2.5 + r() * 2.5).toFixed(1)}s;animation-delay:-${(r() * 4).toFixed(1)}s"/>`).join('');
+        return sceneSky('skyRiver', '#071a2b', '#1d5c6e') + sceneStars(16, 7) +
+          `<circle cx="140" cy="85" r="28" fill="#ecfeff" opacity="0.9"/>
+          <path d="M0 300 Q120 240 250 290 T500 270 T600 280 V500 H0 Z" fill="#1d4e5a"/>
+          <path d="M0 360 Q160 310 320 350 T600 335 V500 H0 Z" fill="#23705f"/>
+          <path d="M0 420 Q300 392 600 420 V500 H0 Z" fill="#1f5f4a"/>
+          <path d="M292 300 C300 330 250 350 270 380 C290 410 210 440 230 500 L380 500 C360 450 420 420 350 385 C320 360 330 330 306 300 Z" fill="#38bdf8"/>
+          <path class="scene-shimmer" d="M298 320 C290 345 268 360 285 385 C300 410 250 440 270 495" stroke="#e0f2fe" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.8"/>
+          <path class="scene-shimmer" d="M312 330 C318 355 340 375 320 400 C305 425 350 450 335 495" stroke="#bae6fd" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.7" style="animation-delay:-1.2s"/>
+          <g stroke="#14532d" stroke-width="3" stroke-linecap="round"><path d="M180 430 l-4 -30 M188 432 l2 -36 M196 430 l6 -26"/><path d="M430 428 l-4 -28 M438 430 l2 -34 M446 428 l6 -24"/></g>` + flies;
+      },
+      mountain: () => sceneSky('skyMountain', '#1e1b2e', '#8a4b2d') +
+        `<circle cx="300" cy="250" r="60" fill="#fdba74" opacity="0.55"/>` + sceneStars(8, 13, 140) +
+        peaks([[0, 230], [90, 140], [170, 210], [270, 90], [360, 200], [450, 120], [540, 200], [600, 170]], 320, '#44403c', '#f5f5f4') +
+        `<path d="M0 340 L80 300 L150 330 L240 290 L330 335 L420 300 L520 335 L600 310 V500 H0 Z" fill="#57534e"/>
+        <path d="M0 400 Q150 360 300 392 T600 380 V500 H0 Z" fill="#6b5a45"/><path d="M0 435 Q300 410 600 435 V500 H0 Z" fill="#7c6a50"/>` +
+        [[60, 395], [110, 405], [470, 388], [540, 398]].map(([x, y], i) => pine(x, y, 38 + i * 4, '#2f3d2a')).join('') +
+        `<path d="M200 440 l14 -14 l18 4 l8 14 Z" fill="#a8a29e"/><path d="M380 445 l10 -10 l14 2 l6 10 Z" fill="#a8a29e"/>`,
+      volcano: () => {
+        const r = seeded(31);
+        const embers = Array.from({ length: 16 }, () => `<circle class="scene-anim scene-ember" cx="${Math.round(240 + r() * 120)}" cy="${Math.round(170 + r() * 30)}" r="${(1.5 + r() * 2).toFixed(1)}" fill="${r() > 0.5 ? '#fb923c' : '#fde047'}" style="animation-duration:${(3 + r() * 3).toFixed(1)}s;animation-delay:-${(r() * 6).toFixed(1)}s"/>`).join('');
+        return sceneSky('skyVolcano', '#1a0505', '#7f1d1d') +
+          `<g fill="#3f1d1d" opacity="0.8"><ellipse cx="160" cy="90" rx="90" ry="26"/><ellipse cx="420" cy="70" rx="110" ry="30"/></g>
+          <circle class="scene-glow" cx="300" cy="185" r="80" fill="#f97316" opacity="0.4"/>
+          <path d="M120 360 L250 190 L280 180 L320 180 L350 190 L480 360 Z" fill="#3b1414"/>
+          <path d="M262 186 Q300 172 338 186 L330 196 Q300 188 270 196 Z" fill="#fb923c"/>
+          <path class="scene-glow" d="M296 192 C290 230 270 250 276 290 C280 320 262 340 266 362 L280 362 C278 338 296 320 292 290 C288 252 306 232 304 192 Z" fill="#f97316"/>
+          <path d="M318 194 C330 230 352 262 346 300 L356 300 C362 260 340 228 326 194 Z" fill="#fbbf24" opacity="0.9"/>
+          <path d="M0 330 Q100 300 180 340 L120 360 Z M600 320 Q520 300 440 340 L480 360 Z" fill="#2a0f0f"/>
+          <path d="M0 380 Q160 350 300 375 T600 365 V500 H0 Z" fill="#2a0f0f"/><path d="M0 430 Q300 405 600 430 V500 H0 Z" fill="#1c0808"/>
+          <g stroke="#f97316" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.8"><path d="M80 450 l20 -8 l14 10 l22 -6"/><path d="M440 455 l18 -10 l16 8 l20 -8"/></g>` + embers;
+      },
+      cosmic: () => sceneSky('skyCosmic', '#05010f', '#2e1065') + sceneStars(40, 17, 380) +
+        `<ellipse cx="420" cy="160" rx="170" ry="60" fill="#c026d3" opacity="0.18"/><ellipse cx="160" cy="220" rx="140" ry="50" fill="#6366f1" opacity="0.2"/>
+        <g transform="rotate(-18 120 110)"><circle cx="120" cy="110" r="34" fill="#f472b6"/><ellipse cx="120" cy="110" rx="62" ry="12" fill="none" stroke="#fbcfe8" stroke-width="5" opacity="0.85"/><path d="M86 108 a34 34 0 0 1 68 0" fill="#f472b6"/></g>
+        <circle cx="500" cy="70" r="12" fill="#c4b5fd"/>
+        <g class="scene-shoot"><path d="M560 40 l-60 30" stroke="white" stroke-width="2.5" stroke-linecap="round"/></g>
+        <g class="scene-shoot" style="animation-delay:-3s"><path d="M420 20 l-50 25" stroke="#f0abfc" stroke-width="2" stroke-linecap="round"/></g>
+        <path d="M0 380 Q150 350 300 372 T600 362 V500 H0 Z" fill="#3b2a6b"/><path d="M0 430 Q300 405 600 430 V500 H0 Z" fill="#2a1d52"/>
+        <g fill="#2a1d52"><ellipse cx="120" cy="400" rx="26" ry="7"/><ellipse cx="470" cy="392" rx="20" ry="6"/></g>
+        <g fill="#4c3a86"><ellipse cx="300" cy="455" rx="30" ry="7"/><ellipse cx="80" cy="470" rx="18" ry="5"/></g>`,
+      forest: () => {
+        const r = seeded(41);
+        const flies = Array.from({ length: 12 }, () => `<circle class="scene-anim scene-firefly" cx="${Math.round(r() * 600)}" cy="${Math.round(240 + r() * 160)}" r="2.4" fill="#fde047" style="animation-duration:${(2 + r() * 3).toFixed(1)}s;animation-delay:-${(r() * 4).toFixed(1)}s"/>`).join('');
+        const farPines = Array.from({ length: 14 }, (_, i) => pine(i * 46 + 10, 330 + (i % 3) * 6, 70 + (i % 4) * 12, '#14532d')).join('');
+        const round = (x, y, rr) => `<rect x="${x - 4}" y="${y}" width="8" height="34" fill="#3f2a1a"/><circle cx="${x}" cy="${y - rr * 0.4}" r="${rr}" fill="#166534"/><circle cx="${x - rr * 0.6}" cy="${y}" r="${rr * 0.7}" fill="#15803d"/><circle cx="${x + rr * 0.6}" cy="${y}" r="${rr * 0.7}" fill="#15803d"/>`;
+        return sceneSky('skyForest', '#071a10', '#1f4d2e') + sceneStars(14, 19, 200) +
+          `<circle cx="450" cy="85" r="28" fill="#fef9c3" opacity="0.9"/>` + farPines +
+          `<path d="M0 370 Q150 340 300 365 T600 355 V500 H0 Z" fill="#1a3d22"/>` +
+          round(70, 360, 34) + round(530, 352, 38) + round(180, 380, 24) + round(430, 378, 26) +
+          `<path d="M0 430 Q300 405 600 430 V500 H0 Z" fill="#14301b"/>` + flies;
+      },
+      lightning: () => {
+        const r = seeded(51);
+        const rain = Array.from({ length: 34 }, () => { const x = Math.round(r() * 640), y = Math.round(r() * 300); return `<path class="scene-anim scene-rain" d="M${x} ${y} l-6 18" stroke="#a5b4fc" stroke-width="1.6" stroke-linecap="round" opacity="0.6" style="animation-delay:-${(r() * 0.7).toFixed(2)}s"/>`; }).join('');
+        return sceneSky('skyStorm', '#0b0820', '#312e81') +
+          `<rect class="scene-skyflash" width="600" height="500" fill="#e0e7ff"/>
+          <g class="scene-flash"><path d="M420 120 L400 190 L425 190 L395 280 L450 170 L425 170 L445 120 Z" fill="#fef9c3"/></g>
+          <g class="scene-flash" style="animation-delay:-3.4s"><path d="M150 130 L135 190 L155 190 L132 260 L175 175 L155 175 L170 130 Z" fill="#fef9c3"/></g>
+          <g fill="#1e1b4b"><ellipse cx="100" cy="90" rx="130" ry="44"/><ellipse cx="300" cy="70" rx="150" ry="50"/><ellipse cx="510" cy="95" rx="140" ry="46"/></g>
+          <g fill="#2a2668"><ellipse cx="200" cy="120" rx="110" ry="32"/><ellipse cx="420" cy="125" rx="120" ry="34"/></g>
+          <path d="M0 360 Q150 320 300 350 T600 340 V500 H0 Z" fill="#1e1b4b"/><path d="M0 425 Q300 400 600 425 V500 H0 Z" fill="#272350"/>` + rain;
+      },
+    };
+
+    SCENES.desert = () => {
+      const r = seeded(61);
+      const sand = Array.from({ length: 22 }, () => `<circle class="scene-anim scene-sand" cx="${Math.round(r() * 120 - 80)}" cy="${Math.round(300 + r() * 160)}" r="${(1 + r() * 1.6).toFixed(1)}" fill="#fde68a" opacity="${(0.4 + r() * 0.5).toFixed(2)}" style="animation-duration:${(5 + r() * 5).toFixed(1)}s;animation-delay:-${(r() * 10).toFixed(1)}s"/>`).join('');
+      const cactus = (x, y, h) => `<g fill="#3f5f2a"><rect x="${x - 6}" y="${y - h}" width="12" height="${h}" rx="6"/><rect x="${x - 20}" y="${y - h * 0.62}" width="9" height="${h * 0.32}" rx="4.5"/><rect x="${x - 20}" y="${y - h * 0.38}" width="20" height="8" rx="4"/><rect x="${x + 11}" y="${y - h * 0.8}" width="9" height="${h * 0.36}" rx="4.5"/><rect x="${x}" y="${y - h * 0.5}" width="20" height="8" rx="4"/></g>`;
+      return sceneSky('skyDesert', '#1e1035', '#c2410c') + sceneStars(12, 23, 160) +
+        `<circle cx="300" cy="235" r="70" fill="#fdba74" opacity="0.45"/><circle cx="430" cy="90" r="26" fill="#fff7ed" opacity="0.9"/>
+        <path d="M30 300 L60 250 L150 250 L175 300 Z M440 305 L470 240 L560 240 L590 305 Z" fill="#7c2d12"/>
+        <path d="M0 320 Q120 280 260 315 T520 300 T600 310 V500 H0 Z" fill="#9a3412"/>
+        <path d="M0 365 Q180 320 330 360 T600 350 V500 H0 Z" fill="#b45309"/>
+        <path d="M0 425 Q260 395 420 418 T600 412 V500 H0 Z" fill="#c2621a"/>` +
+        cactus(80, 395, 64) + cactus(525, 388, 54) +
+        `<path d="M200 448 q20 -8 40 0" stroke="#fbbf24" stroke-width="3" fill="none" opacity="0.5" stroke-linecap="round"/><path d="M380 455 q24 -9 48 0" stroke="#fbbf24" stroke-width="3" fill="none" opacity="0.5" stroke-linecap="round"/>` + sand;
+    };
+
+    function sceneArt(key) {
+      if (key === 'neutral' || !SCENES[key]) return NEUTRAL_SCENE;
+      return `<svg class="absolute inset-0 w-full h-full" viewBox="0 0 600 500" preserveAspectRatio="xMidYMax slice" aria-hidden="true">${SCENES[key]()}<rect class="scene-wash" width="600" height="500" fill="white"/></svg>`;
+    }
+
+    // Fade to the new scene when the key changes (egg = neutral, then the dragon type)
+    function updateScene(key) {
+      if (key === currentSceneKey) return;
+      currentSceneKey = key;
+      const el = document.getElementById('stageScene');
+      el.style.opacity = '0';
+      setTimeout(() => {
+        el.innerHTML = sceneArt(currentSceneKey);
+        el.style.opacity = '1';
+      }, 450);
+    }
 
     /* ==========================================================================
        DRAGON GALLERY (per class name, saved in this browser)
@@ -3368,9 +3585,34 @@
         ? 'No dragons yet. Raise a dragon all the way to King or Queen to add it here!'
         : `${found} of ${SPECIES_KEYS.length} dragon types discovered · ${list.length} dragon${list.length === 1 ? '' : 's'} raised`;
 
+      // The dragon being raised right now, at its current level
+      const now = currentDragon(), nowLevel = state.dragonLevel, hatched = nowLevel > 0;
+      const nowInfo = levelInfo(nowLevel, now);
+      const nowSp = speciesOf(now);
+      document.getElementById('galleryNow').innerHTML = `
+        <div class="mb-4 rounded-2xl border-2 border-quiet-400 bg-quiet-500/10 p-3 flex items-center gap-4">
+          <svg viewBox="-20 -40 280 290" class="w-24 sm:w-28 h-auto shrink-0 overflow-visible">${awakeArt(nowLevel, now)}</svg>
+          <div class="min-w-0">
+            <div class="text-xs font-bold uppercase tracking-widest text-quiet-300">🌱 Now raising${state.dragonFamily > 0 ? ` · Dragon #${state.dragonFamily + 1}` : ''}</div>
+            <div class="font-display font-bold text-xl sm:text-2xl text-white leading-tight">${nowInfo.name}</div>
+            <div class="text-sm text-slate-300">${hatched ? `Level ${nowLevel + 1} · keep it quiet to raise it to ${nowSp.short} King or Queen!` : 'A mystery egg… what kind of dragon will hatch?'}</div>
+          </div>
+        </div>`;
+
       document.getElementById('galleryGrid').innerHTML = SPECIES_KEYS.map(key => {
         const sp = DRAGON_SPECIES[key];
         const mine = list.filter(e => e.species === key);
+        const growing = hatched && now.species === key;
+        const growTag = growing ? `<div class="mt-1 text-[11px] font-bold text-quiet-200">🌱 Growing now: ${nowInfo.name}</div>` : '';
+        if (mine.length === 0 && growing) {
+          // Not discovered yet, but the class is raising one right now: show its current form
+          return `<div class="on-color rounded-2xl border-2 border-dashed p-3 flex flex-col items-center text-center" style="border-color: rgb(${sp.colors.body}); background: rgb(${sp.colors['wing-dark']} / 0.15)">
+            <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible">${awakeArt(nowLevel, now)}</svg>
+            <div class="font-display font-bold text-lg text-white mt-1">${sp.name}</div>
+            <div class="text-[11px] text-slate-400">Not raised to King or Queen yet</div>
+            ${growTag}
+          </div>`;
+        }
         if (mine.length === 0) {
           // Not discovered yet: a dark silhouette keeps it a mystery
           return `<div class="rounded-2xl border-2 border-dashed border-violet-700 bg-violet-950/60 p-3 flex flex-col items-center text-center">
@@ -3387,6 +3629,7 @@
           <div class="font-display font-bold text-lg text-white mt-1">${sp.name}</div>
           <div class="text-xs font-bold text-pink-300">${crowns}</div>
           <div class="text-[11px] text-slate-400">First raised ${mine[0].date}</div>
+          ${growTag}
         </div>`;
       }).join('');
     }
@@ -3423,6 +3666,30 @@
     const FS_ENTER_ICON = '<path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>';
     const FS_EXIT_ICON = '<path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>';
 
+    // All pop-up menus (modals)
+    const MENU_IDS = ['galleryModal', 'settingsModal', 'logsModal', 'calibrateModal', 'timeExpiredModal'];
+    const openMenus = () => MENU_IDS.map(id => document.getElementById(id)).filter(el => el && !el.classList.contains('hidden'));
+    function closeAllMenus() {
+      openMenus().forEach(el => { el.classList.add('hidden'); el.classList.remove('flex'); });
+    }
+    // Clicking the dark area around a menu closes it
+    function setupMenuBackdrops() {
+      MENU_IDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', (e) => { if (e.target === el) { el.classList.add('hidden'); el.classList.remove('flex'); } });
+      });
+    }
+
+    // Normally the browser uses Esc to leave full screen before the page sees it.
+    // Chrome and Edge let the page catch Esc instead (holding Esc still exits),
+    // so Esc can close a menu without leaving full screen. Other browsers ignore this.
+    function lockEscape() {
+      if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(() => {});
+    }
+    function unlockEscape() {
+      if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
+    }
+
     function toggleFullscreen() {
       if (!fsSupported) return;
       const root = document.documentElement;
@@ -3437,9 +3704,10 @@
 
     function updateFullscreenButton() {
       const on = !!fsElement();
+      if (on) lockEscape(); else unlockEscape();
       document.getElementById('fullscreenIcon').innerHTML = on ? FS_EXIT_ICON : FS_ENTER_ICON;
       document.getElementById('fullscreenLabel').textContent = on ? 'Exit Full Screen' : 'Full Screen';
-      document.getElementById('fullscreenBtn').title = on ? 'Exit full screen (F or Esc)' : 'Full screen (F)';
+      document.getElementById('fullscreenBtn').title = on ? 'Exit full screen (F, or Esc when no menu is open)' : 'Full screen (F)';
     }
 
     function setupFullscreen() {
@@ -3513,6 +3781,23 @@
       updateDragonMood();
       const who = family > 0 ? `dragon #${family + 1} is now` : 'dragon is now';
       addMilestone('quiet', '🔄', `Level timing changed: ${who} ${levelName(level)}`);
+    }
+
+    function renderSilencePicker() {
+      const el = document.getElementById('silencePicker');
+      el.innerHTML = SILENCE_OPTIONS.map(v => {
+        const active = v === silenceToQuietSec;
+        return `<button type="button" data-value="${v}" class="py-1.5 rounded-lg border-2 text-xs font-bold transition ${active
+          ? 'bg-quiet-500/20 text-quiet-200 border-quiet-400'
+          : 'bg-violet-800 text-slate-300 border-violet-700 hover:bg-violet-750'}">${v} sec</button>`;
+      }).join('');
+      el.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => {
+        silenceToQuietSec = Number(btn.dataset.value);
+        try { localStorage.setItem('quietloud-silence', String(silenceToQuietSec)); } catch (e) {}
+        renderSilencePicker();
+        updateSilenceBox(lastSilenceMs);
+      }));
+      document.getElementById('silenceCountdown').textContent = `${silenceToQuietSec}s`;
     }
 
     function renderDragonSettings() {
