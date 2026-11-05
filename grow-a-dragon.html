@@ -3465,6 +3465,7 @@
           });
           btn.classList.add('border-pink-500', 'bg-pink-500/20', 'text-pink-300');
           state.countdownDuration = parseInt(btn.getAttribute('data-duration'), 10);
+          if (state.mode === 'count-down') dom.currentModeLabel.textContent = `Mode: Count-Down (${Math.round(state.countdownDuration / 60)} min)`;
         });
       });
 
@@ -3477,10 +3478,12 @@
         setDragonSettings({ ...DRAGON_DEFAULTS });
       });
 
+      // Settings already apply as they're changed, so this only closes the window.
+      // It never resets: the clocks and the dragon keep their progress.
       dom.applySettingsBtn.addEventListener('click', () => {
         dom.settingsModal.classList.add('hidden');
         dom.settingsModal.classList.remove('flex');
-        resetAllTimers();
+        updateDisplay();
       });
 
       // Expired modal buttons
