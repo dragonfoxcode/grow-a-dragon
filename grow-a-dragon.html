@@ -412,7 +412,7 @@
     <!-- Quick action toggles: Mic, Sound, Logs, Settings -->
     <div class="flex items-center gap-2 sm:gap-3">
       <!-- Microphone Noise Detector Toggle -->
-      <button id="micToggleBtn" title="Automatic Noise Meter" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800/80 hover:bg-violet-750 text-slate-200 border border-violet-700 transition">
+      <button id="micToggleBtn" title="Sound Options" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800/80 hover:bg-violet-750 text-slate-200 border border-violet-700 transition">
         <span id="micStatusDot" class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
         <span class="hidden sm:inline" id="micBtnLabel">Mic Auto: Off</span>
       </button>
@@ -547,7 +547,7 @@
         <!-- Level title (above the dragon so big flames never cover it) -->
         <div class="stage-title relative z-20 px-5 sm:px-6 pt-5 flex items-start justify-between gap-3">
           <div>
-            <div class="text-xs sm:text-sm font-bold uppercase tracking-widest text-quiet-300"><span id="dragonGenLabel" class="hidden"></span>Level <span id="dragonLevelNum">1</span></div>
+            <div class="text-xs sm:text-sm font-bold uppercase tracking-widest text-quiet-300"><span id="dragonGenLabel" class="hidden"></span>Level <span id="dragonLevelNum">1</span><span id="dragonRarity" class="hidden ml-2 inline-block px-2 py-0.5 rounded-full border normal-case tracking-normal align-middle"></span></div>
             <h2 id="dragonLevelName" class="text-3xl sm:text-4xl font-display font-bold text-white leading-tight">Dragon Egg</h2>
             <div id="dragonHearts" class="flex items-center gap-1 mt-1" aria-label="Dragon hearts"></div>
           </div>
@@ -599,7 +599,7 @@
           <div id="loudTimeDisplay" class="timer-digits font-display numeral-display font-bold text-white select-none">00:00.0</div>
           <p class="text-sm sm:text-base text-pink-300/90 mt-2 font-semibold" id="loudSubDetails">Too noisy? Tap here!</p>
 
-          <!-- Quiet-down countdown (shown while Loud Time runs with the mic on; length set in Settings) -->
+          <!-- Quiet-down countdown (shown while Loud Time runs with the mic on; length set in Sound Options) -->
           <div id="silenceBox" class="hidden w-full mt-3 rounded-2xl bg-quiet-500/10 border-2 border-quiet-400/50 px-3 py-2 text-left">
             <div class="flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-quiet-300">
               <span>🤫 Stay quiet to go back</span>
@@ -731,15 +731,15 @@
     </div>
   </footer>
 
-  <!-- MIC CALIBRATION MODAL -->
+  <!-- SOUND OPTIONS (the mic menu): on/off, calibration, trigger level, quiet-down time -->
   <div id="calibrateModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
-    <div class="bg-violet-900 border border-violet-700 rounded-3xl w-full max-w-lg p-6 shadow-2xl relative flex flex-col gap-4">
+    <div class="bg-violet-900 border border-violet-700 rounded-3xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-6 shadow-2xl relative flex flex-col gap-4">
       <div class="flex items-center justify-between pb-3 border-b border-violet-800">
         <div class="flex items-center gap-2.5">
           <div class="w-9 h-9 rounded-xl bg-pink-500/20 text-pink-300 flex items-center justify-center text-xl border border-pink-500/30">🎙️</div>
           <div>
-            <h3 class="font-display font-bold text-lg text-white">Microphone Noise Calibration</h3>
-            <p class="text-xs text-slate-400">Sample classroom sound to automatically set the sweet spot</p>
+            <h3 class="font-display font-bold text-lg text-white">Sound Options</h3>
+            <p class="text-xs text-slate-400">The room loudness detector: turn it on, tune it, and set the quiet-down time</p>
           </div>
         </div>
         <button id="closeCalibrateBtn" class="flex items-center gap-1.5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-violet-800 transition"><span class="kbd" title="Press Esc to close">Esc</span><span>✕</span></button>
@@ -830,6 +830,13 @@
           <span>60% (Loud Voices)</span>
           <span>85% (Shouting)</span>
         </div>
+      </div>
+
+      <!-- Quiet-down time (buttons are built by renderSilencePicker) -->
+      <div class="p-3.5 rounded-2xl bg-violet-950/80 border border-violet-800">
+        <div class="text-xs font-bold text-white">Quiet-down time</div>
+        <div class="text-[11px] text-slate-400 mb-1.5">How long the room must stay quiet before Loud Time switches back to Quiet Time.</div>
+        <div id="silencePicker" class="grid grid-cols-5 gap-1.5"></div>
       </div>
 
       <!-- Calibration Status Message -->
@@ -981,28 +988,15 @@
           </div>
         </div>
 
-        <!-- Microphone Auto-Switch Config -->
-        <div class="p-3.5 rounded-2xl bg-violet-950 border border-violet-800">
-          <div class="flex items-center justify-between mb-2">
-            <div>
-              <span class="text-xs font-bold uppercase tracking-wider text-cyan-300">🎙️ Room Loudness Detector</span>
-              <p class="text-[11px] text-slate-400">Automatically switch to Loud Time if room gets noisy</p>
-            </div>
-            <input type="checkbox" id="modalMicToggle" class="w-4 h-4 accent-cyan-400 cursor-pointer">
+        <!-- The room loudness detector's settings live in Sound Options (the mic menu) -->
+        <div class="p-3.5 rounded-2xl bg-violet-950 border border-violet-800 flex items-center justify-between gap-3">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-cyan-300">🎙️ Room Loudness Detector</span>
+            <p class="text-[11px] text-slate-400">Mic on/off, calibration and quiet-down time are in Sound Options.</p>
           </div>
-
-          <div class="mt-3">
-            <div class="text-sm font-semibold text-white">Quiet-down time</div>
-            <div class="text-[11px] text-slate-400 mb-1.5">How long the room must stay quiet before Loud Time switches back to Quiet Time.</div>
-            <div id="silencePicker" class="grid grid-cols-5 gap-1.5"></div>
-          </div>
-
-          <div class="mt-3 flex items-center justify-between">
-            <span class="text-xs text-slate-300 font-medium">Detailed Calibration Tool:</span>
-            <button id="openCalibrateFromSettings" class="text-xs px-3 py-1.5 rounded-xl bg-pink-500/20 text-pink-300 border border-pink-500/40 hover:bg-pink-500/30 font-semibold transition">
-              Open Mic Calibration
-            </button>
-          </div>
+          <button id="openCalibrateFromSettings" class="shrink-0 text-xs px-3 py-1.5 rounded-xl bg-pink-500/20 text-pink-300 border border-pink-500/40 hover:bg-pink-500/30 font-semibold transition">
+            Open Sound Options
+          </button>
         </div>
 
         <!-- Timer Type: Count-Up vs Count-Down -->
@@ -1404,7 +1398,7 @@
        ROOM LOUDNESS MICROPHONE DETECTOR (Time-Domain Waveform + Boost)
        ========================================================================== */
     // How long the room must stay continuously quiet before Loud Time hands back to Quiet Time
-    // Teachers can change it in Settings (saved on this computer)
+    // Teachers can change it in Sound Options (saved on this computer)
     const SILENCE_OPTIONS = [5, 10, 15, 20, 30];
     let silenceToQuietSec = 10;
     try {
@@ -1885,6 +1879,7 @@
       dragonSvg: document.getElementById('dragonSvg'),
       dragonLevelNum: document.getElementById('dragonLevelNum'),
       dragonLevelName: document.getElementById('dragonLevelName'),
+      dragonRarity: document.getElementById('dragonRarity'),
       dragonFamily: document.getElementById('dragonFamily'),
       dragonHearts: document.getElementById('dragonHearts'),
       galleryModal: document.getElementById('galleryModal'),
@@ -1957,7 +1952,6 @@
       noiseLevelLabel: document.getElementById('noiseLevelLabel'),
       thresholdMarker: document.getElementById('thresholdMarker'),
       thresholdNotice: document.getElementById('thresholdNotice'),
-      modalMicToggle: document.getElementById('modalMicToggle'),
       calibMicSwitch: document.getElementById('calibMicSwitch'),
       calibMicSwitchLabel: document.getElementById('calibMicSwitchLabel'),
       calibMicSwitchTrack: document.getElementById('calibMicSwitchTrack'),
@@ -2334,6 +2328,28 @@
     /* ==========================================================================
        MILESTONES
        ========================================================================== */
+    // Egg rarity, chosen by the students: chance out of 100 for each new egg
+    const RARITIES = {
+      legendary: { name: 'Legendary',  chance: 1,  icon: '🌈', color: '#facc15' },
+      epic:      { name: 'Epic',       chance: 5,  icon: '💎', color: '#c084fc' },
+      superRare: { name: 'Super Rare', chance: 10, icon: '🌟', color: '#f472b6' },
+      rare:      { name: 'Rare',       chance: 15, icon: '⭐', color: '#38bdf8' },
+      uncommon:  { name: 'Uncommon',   chance: 20, icon: '🍀', color: '#4ade80' },
+      common:    { name: 'Common',     chance: 49, icon: '🥚', color: '#cbd5e1' }, // the rest
+    };
+    const RARITY_KEYS = Object.keys(RARITIES); // rarest first
+    function rollRarity() {
+      let roll = Math.random() * 100;
+      for (const key of RARITY_KEYS) {
+        roll -= RARITIES[key].chance;
+        if (roll < 0) return key;
+      }
+      return 'common';
+    }
+    // Older saved dragons have no rarity: count them as Common
+    const rarityOf = (entry) => RARITIES[entry.rarity] || RARITIES.common;
+    const rarityPill = (r) => `<span class="inline-block px-2 py-0.5 rounded-full border text-[11px] font-bold" style="color:${r.color}; border-color:${r.color}">${r.icon} ${r.name}</span>`;
+
     // Pick the next dragon type: shuffled, no repeats until all types have appeared
     function pickSpecies() {
       if (state.speciesBag.length === 0) {
@@ -2343,7 +2359,7 @@
         if (bag.length > 1 && bag[bag.length - 1] === last) bag.unshift(bag.pop());
         state.speciesBag = bag;
       }
-      return { species: state.speciesBag.pop(), crown: Math.random() < 0.5 ? 'King' : 'Queen' };
+      return { species: state.speciesBag.pop(), crown: Math.random() < 0.5 ? 'King' : 'Queen', rarity: rollRarity() };
     }
     function lineageAt(gen) {
       while (state.dragonLineage.length <= gen) state.dragonLineage.push(pickSpecies());
@@ -2364,10 +2380,11 @@
     // asGoal: the final form is shown as "King or Queen?" until it is reached.
     function levelInfo(level, entry, asGoal = false) {
       const sp = speciesOf(entry);
-      if (level === 0) return { name: 'Dragon Egg', short: 'Egg' };
+      const r = rarityOf(entry);
+      if (level === 0) return { name: entry.rarity && entry.rarity !== 'common' ? `${r.name} Egg` : 'Dragon Egg', short: 'Egg' };
       if (level === 1) {
-        const article = /^[AEIOU]/.test(sp.name) ? 'an' : 'a';
-        return { name: 'Hatching!', short: 'Hatch', title: `It's ${article} ${sp.name}!`, sub: 'The egg is hatching!' };
+        const article = /^[AEIOU]/.test(r.name) ? 'an' : 'a';
+        return { name: 'Hatching!', short: 'Hatch', title: `It's ${article} ${r.name} ${sp.name}!`, sub: `${r.icon} The ${r.name.toLowerCase()} egg is hatching!` };
       }
       if (level < DRAGON_MEGA_LEVEL) {
         const g = GROW_STEPS[level];
@@ -2454,8 +2471,10 @@
       startGracePeriod();
       sound.playLevelUp(drama);
       const n = state.dragonFamily + 1;
-      addMilestone('quiet', '🥚', `The ${royal} laid an egg! Dragon #${n} is on the way`);
-      showToast('quiet', miniDragon(0), 'A new dragon egg!', `The ${royal} laid an egg… Dragon #${n} starts growing now!`);
+      const r = rarityOf(currentDragon());
+      const article = /^[AEIOU]/.test(r.name) ? 'an' : 'a';
+      addMilestone('quiet', r.icon, `The ${royal} laid ${article} ${r.name} egg! Dragon #${n} is on the way`);
+      showToast('quiet', miniDragon(0), `${r.icon} ${article === 'an' ? 'An' : 'A'} ${r.name.toUpperCase()} egg!`, `The ${royal} laid an egg… Dragon #${n} starts growing now!`);
     }
 
     // No hearts left: the dragon runs off and hides
@@ -2518,7 +2537,14 @@
       dom.dragonWrap.classList.toggle('is-mega', level >= DRAGON_MEGA_LEVEL);
       // Bigger Mega forms: a glow in the dragon type's colors that deepens and widens
       const warm = megaWarm(stars, sp);
-      dom.dragonSvg.style.filter = warm ? `drop-shadow(0 0 ${18 + megaPower(stars) * 3}px ${warm.glow})` : '';
+      // Rarer dragons glow in their rarity color (Uncommon and up)
+      const rar = rarityOf(entry), rank = RARITY_KEYS.length - 1 - RARITY_KEYS.indexOf(entry.rarity || 'common'); // 0 common … 5 legendary
+      const rarityGlow = rank > 0 ? `drop-shadow(0 0 ${4 + rank * 3}px ${rar.color})` : '';
+      dom.dragonSvg.style.filter = [warm ? `drop-shadow(0 0 ${18 + megaPower(stars) * 3}px ${warm.glow})` : '', rarityGlow].filter(Boolean).join(' ');
+      dom.dragonRarity.classList.toggle('hidden', !entry.rarity);
+      dom.dragonRarity.textContent = `${rar.icon} ${rar.name}`;
+      dom.dragonRarity.style.color = rar.color;
+      dom.dragonRarity.style.borderColor = rar.color;
       dom.dragonLevelNum.textContent = level + 1;
       const fam = state.dragonFamily;
       dom.dragonGenLabel.classList.toggle('hidden', fam === 0);
@@ -3172,13 +3198,12 @@
       syncMicUI();
     }
 
-    // Make every mic control (top button, settings checkbox, calibration switch) match the mic
+    // Make every mic control (top button, Sound Options switch) match the mic
     function syncMicUI() {
       const on = !!(micMeter && micMeter.isActive);
       dom.micMeterContainer.classList.toggle('hidden', !on);
       dom.micBtnLabel.textContent = on ? 'Mic Auto: ON' : 'Mic Auto: Off';
       dom.micStatusDot.className = `w-2.5 h-2.5 rounded-full ${on ? 'bg-emerald-400' : 'bg-slate-500'}`;
-      dom.modalMicToggle.checked = on;
 
       dom.calibMicSwitch.setAttribute('aria-checked', String(on));
       dom.calibMicSwitchLabel.textContent = on ? 'On' : 'Off';
@@ -3275,7 +3300,6 @@
       // The top Mic button opens the calibration window, which holds the on/off switch
       dom.micToggleBtn.addEventListener('click', openCalibrationDialog);
       dom.calibMicSwitch.addEventListener('click', toggleMicrophoneDetector);
-      dom.modalMicToggle.addEventListener('change', toggleMicrophoneDetector);
 
       // Calibration Modal Triggers
       if (dom.quickCalibrateBtn) dom.quickCalibrateBtn.addEventListener('click', openCalibrationDialog);
@@ -3696,7 +3720,7 @@
     function addToGallery(entry) {
       const all = loadGallery();
       const cls = galleryClass();
-      (all[cls] = all[cls] || []).push({ species: entry.species, crown: entry.crown, date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) });
+      (all[cls] = all[cls] || []).push({ species: entry.species, crown: entry.crown, rarity: entry.rarity || 'common', date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) });
       saveGallery(all);
     }
 
@@ -3719,6 +3743,7 @@
           <div class="min-w-0">
             <div class="text-xs font-bold uppercase tracking-widest text-quiet-300">🌱 Now raising${state.dragonFamily > 0 ? ` · Dragon #${state.dragonFamily + 1}` : ''}</div>
             <div class="font-display font-bold text-xl sm:text-2xl text-white leading-tight">${nowInfo.name}</div>
+            <div class="my-1">${rarityPill(rarityOf(now))}</div>
             <div class="text-sm text-slate-300">${hatched ? `Level ${nowLevel + 1} · keep it quiet to raise it to ${nowSp.short} King or Queen!` : 'A mystery egg… what kind of dragon will hatch?'}</div>
           </div>
         </div>`;
@@ -3747,11 +3772,13 @@
         }
         const kings = mine.filter(e => e.crown === 'King').length, queens = mine.length - kings;
         const latest = mine[mine.length - 1];
+        const best = mine.reduce((a, e) => RARITY_KEYS.indexOf(e.rarity || 'common') < RARITY_KEYS.indexOf(a.rarity || 'common') ? e : a);
         const crowns = [kings ? `👑 ${kings} King${kings === 1 ? '' : 's'}` : '', queens ? `👑 ${queens} Queen${queens === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
         return `<div class="on-color rounded-2xl border-2 p-3 flex flex-col items-center text-center" style="border-color: rgb(${sp.colors.body}); background: rgb(${sp.colors['wing-dark']} / 0.22)">
           <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible">${awakeArt(DRAGON_TOP_LEVEL, latest)}</svg>
           <div class="font-display font-bold text-lg text-white mt-1">${sp.name}</div>
           <div class="text-xs font-bold text-pink-300">${crowns}</div>
+          <div class="my-1">Rarest: ${rarityPill(rarityOf(best))}</div>
           <div class="text-[11px] text-slate-400">First raised ${mine[0].date}</div>
           ${growTag}
         </div>`;
