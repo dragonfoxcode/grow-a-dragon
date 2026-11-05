@@ -400,6 +400,12 @@
       </button>
 
       <!-- Settings Dropdown -->
+      <!-- Dragon Gallery: every dragon type this class has raised to King/Queen -->
+      <button id="galleryBtn" title="Dragon Gallery" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-750 text-pink-300 border border-violet-700 transition">
+        <span>🐉</span>
+        <span class="hidden sm:inline">Gallery</span>
+      </button>
+
       <!-- Full screen toggle (hidden if the browser can't do full screen) -->
       <button id="fullscreenBtn" title="Full screen (F)" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-750 text-slate-200 border border-violet-700 transition">
         <svg id="fullscreenIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
@@ -516,7 +522,7 @@
         <!-- The dragon -->
         <div id="dragonArea" class="relative z-10 flex-1 flex items-end justify-center min-h-[200px]">
           <!-- Grown dragons that laid an egg (the family) -->
-          <div id="dragonFamily" class="hidden absolute left-1 sm:left-3 bottom-1 w-20 sm:w-28 pointer-events-none" title="Dragon family"></div>
+          <div id="dragonFamily" class="hidden absolute left-1 sm:left-3 bottom-1 pointer-events-none" title="Dragon family"></div>
           <div id="dragonWrap" class="dragon-wrap is-paused w-[min(80%,330px)] aspect-square">
             <svg id="dragonSvg" class="w-full h-full overflow-visible" viewBox="0 0 240 240" aria-label="Class dragon"></svg>
           </div>
@@ -805,6 +811,27 @@
   </div>
 
   <!-- CLASS SESSIONS LOG MODAL -->
+  <!-- DRAGON GALLERY MODAL -->
+  <div id="galleryModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-violet-900 border border-violet-700 rounded-3xl w-full max-w-4xl p-6 shadow-2xl relative max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between gap-3 pb-4 border-b border-violet-800">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="text-2xl">🐉</span>
+          <div class="min-w-0">
+            <h3 id="galleryTitle" class="font-display font-bold text-lg sm:text-xl text-white truncate">Dragon Gallery</h3>
+            <p id="gallerySummary" class="text-xs text-slate-400">Raise a dragon all the way to King or Queen to add it here.</p>
+          </div>
+        </div>
+        <button id="closeGalleryBtn" class="shrink-0 flex items-center gap-1.5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-violet-800 transition"><span class="kbd" title="Press Esc to close">Esc</span><span>✕</span></button>
+      </div>
+      <div id="galleryGrid" class="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 overflow-y-auto pr-1"></div>
+      <div class="mt-4 pt-3 border-t border-violet-800 flex items-center justify-between gap-2">
+        <p class="text-[11px] text-slate-500">Saved on this computer for each Class / Period name.</p>
+        <button id="clearGalleryBtn" class="text-xs px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-violet-700 font-semibold transition">Clear this class's gallery</button>
+      </div>
+    </div>
+  </div>
+
   <div id="logsModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
     <div class="bg-violet-900 border border-violet-700 rounded-3xl w-full max-w-3xl p-6 shadow-2xl relative max-h-[85vh] flex flex-col">
       <div class="flex items-center justify-between pb-4 border-b border-violet-800">
@@ -1558,6 +1585,8 @@
       dragonLevel: 0,
       dragonBest: 0,
       dragonFamily: 0,    // grown dragons that reached the final form and laid an egg
+      dragonLineage: [],  // every dragon this session in order: { species, crown }; the current one is [dragonFamily]
+      speciesBag: [],     // dragon types not used yet in this round
       milestones: [], // { side, icon, label, clock } newest first
 
       // Class Logs
@@ -1596,18 +1625,123 @@
     const dragonDrama = (level) => Math.max(0, level - DRAGON_MEGA_LEVEL + 1);
     // Stars 4–10 build on star 3: each step is warmer (gold → orange → red → crimson)
     // with a bigger flame, more lightning, more/bigger horns and bigger wings
-    const MEGA_WARM_STEPS = [
-      { outer: '#facc15', inner: '#fef08a', bolt: '#fde047', vein: '#fde047', glow: 'rgb(250 204 21 / 0.8)' },
-      { outer: '#f59e0b', inner: '#fde68a', bolt: '#fcd34d', vein: '#fbbf24', glow: 'rgb(245 158 11 / 0.8)' },
-      { outer: '#f97316', inner: '#fdba74', bolt: '#fbbf24', vein: '#fb923c', glow: 'rgb(249 115 22 / 0.85)' },
-      { outer: '#ea580c', inner: '#fb923c', bolt: '#fb923c', vein: '#f97316', glow: 'rgb(234 88 12 / 0.85)' },
-      { outer: '#dc2626', inner: '#f97316', bolt: '#f97316', vein: '#ef4444', glow: 'rgb(220 38 38 / 0.85)' },
-      { outer: '#b91c1c', inner: '#ea580c', bolt: '#f87171', vein: '#dc2626', glow: 'rgb(185 28 28 / 0.9)' },
-      { outer: '#991b1b', inner: '#ea580c', bolt: '#fbbf24', vein: '#f97316', glow: 'rgb(234 88 12 / 0.95)' },
-    ];
+    /* ---------- Dragon types ----------
+       Each new egg is a random type (no repeats until every type has appeared).
+       colors: the dragon's own colors ("R G B"), used instead of the app theme.
+       ramp: aura colors for the bigger Mega forms (weak → strongest).
+       forms: Mega forms for levels 6–11 as [name, short label, pop-up line].
+       Level 12 is always "<Type> King" or "<Type> Queen" (picked at random). */
+    const DRAGON_SPECIES = {
+      ice: {
+        name: 'Ice Dragon', short: 'Ice', feature: 'ice',
+        colors: { body: '165 216 255', shade: '96 160 220', belly: '236 248 255', wing: '186 230 253', 'wing-dark': '56 140 200', horn: '240 249 255', cheek: '196 181 253', ink: '15 23 42' },
+        ramp: ['#e0f2fe', '#bae6fd', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0284c7', '#1d4ed8'], bolt: '#ffffff', core: '#ffffff',
+        forms: [
+          ['Frost Dragon', 'Frost', 'Frosty power veins sparkle across its skin!'],
+          ['Icicle Dragon', 'Icicle', 'Sharp icicle spikes burst out!'],
+          ['Glacier Dragon', 'Glacier', 'A freezing aura swirls around it!'],
+          ['Blizzard Dragon', 'Blizzard', 'Giant wings whip up a blizzard!'],
+          ['Avalanche Dragon', 'Avalanche', 'A crown of ice and roaring snow!'],
+          ['Polar Storm Dragon', 'Polar', 'A blinding white core of pure cold!'],
+        ],
+      },
+      river: {
+        name: 'River Dragon', short: 'River', feature: 'river',
+        colors: { body: '45 190 200', shade: '14 130 150', belly: '204 251 241', wing: '56 130 246', 'wing-dark': '30 64 175', horn: '186 230 253', cheek: '253 164 175', ink: '8 20 40' },
+        ramp: ['#99f6e4', '#5eead4', '#2dd4bf', '#14b8a6', '#0891b2', '#0e7490', '#1e40af'], bolt: '#ccfbf1', core: '#ecfeff',
+        forms: [
+          ['Rapids Dragon', 'Rapids', 'Rushing water glows across its scales!'],
+          ['Whirlpool Dragon', 'Whirlpool', 'Spiky fins burst out!'],
+          ['Tidal Dragon', 'Tidal', 'A swirling aura of sea spray!'],
+          ['Waterfall Dragon', 'Waterfall', 'Huge wings pour like a waterfall!'],
+          ['Tsunami Dragon', 'Tsunami', 'A crown of waves crashes around it!'],
+          ['Monsoon Dragon', 'Monsoon', 'A glowing heart of the deep ocean!'],
+        ],
+      },
+      mountain: {
+        name: 'Mountain Dragon', short: 'Mountain', feature: 'mountain',
+        colors: { body: '168 140 110', shade: '120 95 72', belly: '231 220 200', wing: '120 140 100', 'wing-dark': '70 85 55', horn: '250 230 180', cheek: '252 165 140', ink: '28 20 14' },
+        ramp: ['#e7e5e4', '#d6d3d1', '#fcd34d', '#f59e0b', '#b45309', '#92400e', '#78350f'], bolt: '#fde68a', core: '#fef3c7',
+        forms: [
+          ['Boulder Dragon', 'Boulder', 'Glowing cracks split its rocky skin!'],
+          ['Crag Dragon', 'Crag', 'Stone spikes burst out!'],
+          ['Crystal Cave Dragon', 'Crystal', 'A shining crystal aura!'],
+          ['Summit Dragon', 'Summit', 'Wings as wide as a mountain range!'],
+          ['Earthquake Dragon', 'Quake', 'A crown of rock and rumbling thunder!'],
+          ['Titan Dragon', 'Titan', 'A molten golden heart of the mountain!'],
+        ],
+      },
+      volcano: {
+        name: 'Volcano Dragon', short: 'Volcano', feature: 'volcano',
+        colors: { body: '220 60 50', shade: '150 30 30', belly: '254 200 120', wing: '70 45 55', 'wing-dark': '30 20 25', horn: '253 186 60', cheek: '255 150 120', ink: '20 8 8' },
+        ramp: ['#facc15', '#f59e0b', '#f97316', '#ea580c', '#dc2626', '#b91c1c', '#991b1b'], bolt: '#fde047', core: '#fef08a',
+        forms: [
+          ['Ember Dragon', 'Ember', 'Sparks and glowing lava cracks across its skin!'],
+          ['Spikey Dragon', 'Spikey', 'New horns and spikes burst out!'],
+          ['Blazing Dragon', 'Blazing', 'Its aura explodes into golden flame!'],
+          ['Inferno Dragon', 'Inferno', 'Fire horns, giant wings and an orange inferno!'],
+          ['Magma Dragon', 'Magma', 'Rivers of magma roar around it!'],
+          ['Eruption Dragon', 'Eruption', 'A white-hot core erupts inside the flames!'],
+        ],
+      },
+      cosmic: {
+        name: 'Cosmic Dragon', short: 'Cosmic', feature: 'cosmic',
+        colors: { body: '120 90 220', shade: '76 50 160', belly: '221 214 254', wing: '236 100 200', 'wing-dark': '150 40 130', horn: '250 230 255', cheek: '255 170 220', ink: '15 8 35' },
+        ramp: ['#f5d0fe', '#e879f9', '#c084fc', '#a855f7', '#7c3aed', '#6d28d9', '#4c1d95'], bolt: '#f0abfc', core: '#ffffff',
+        forms: [
+          ['Stardust Dragon', 'Stardust', 'Glowing stardust swirls across its skin!'],
+          ['Comet Dragon', 'Comet', 'Shooting-star spikes burst out!'],
+          ['Nebula Dragon', 'Nebula', 'A glowing nebula surrounds it!'],
+          ['Supernova Dragon', 'Supernova', 'Giant wings blaze like a supernova!'],
+          ['Galaxy Dragon', 'Galaxy', 'A crown of stars and spinning galaxies!'],
+          ['Black Hole Dragon', 'Black Hole', 'A blinding star burns at its heart!'],
+        ],
+      },
+      forest: {
+        name: 'Forest Dragon', short: 'Forest', feature: 'forest',
+        colors: { body: '74 180 100', shade: '30 120 60', belly: '220 245 190', wing: '132 204 22', 'wing-dark': '63 98 18', horn: '250 220 150', cheek: '253 164 175', ink: '10 25 12' },
+        ramp: ['#d9f99d', '#bef264', '#86efac', '#4ade80', '#22c55e', '#15803d', '#166534'], bolt: '#ecfccb', core: '#fef9c3',
+        forms: [
+          ['Thorn Dragon', 'Thorn', 'Glowing vines curl across its skin!'],
+          ['Bramble Dragon', 'Bramble', 'Thorny spikes burst out!'],
+          ['Grove Dragon', 'Grove', 'A leafy green aura grows around it!'],
+          ['Ancient Oak Dragon', 'Oak', 'Wings as wide as an ancient tree!'],
+          ['Wildwood Dragon', 'Wildwood', 'A crown of branches and roaring wind!'],
+          ['Elder Forest Dragon', 'Elder', 'A golden sun glows at its heart!'],
+        ],
+      },
+      lightning: {
+        name: 'Lightning Dragon', short: 'Lightning', feature: 'lightning',
+        colors: { body: '250 204 21', shade: '202 138 4', belly: '254 249 195', wing: '99 102 241', 'wing-dark': '55 48 163', horn: '255 255 255', cheek: '253 164 175', ink: '20 16 40' },
+        ramp: ['#fef9c3', '#fef08a', '#fde047', '#facc15', '#c4b5fd', '#a78bfa', '#7c3aed'], bolt: '#ffffff', core: '#fefce8',
+        forms: [
+          ['Spark Dragon', 'Spark', 'Sparks crackle across its skin!'],
+          ['Static Dragon', 'Static', 'Electric spikes burst out!'],
+          ['Thunderbolt Dragon', 'Bolt', 'A buzzing electric aura!'],
+          ['Storm Dragon', 'Storm', 'Giant wings summon a storm!'],
+          ['Thunderstorm Dragon', 'Thunder', 'A crown of roaring thunder!'],
+          ['Supercell Dragon', 'Supercell', 'A blinding core of pure lightning!'],
+        ],
+      },
+    };
+    const SPECIES_KEYS = Object.keys(DRAGON_SPECIES);
+    const speciesStyle = (sp) => Object.entries(sp.colors).map(([k, v]) => `--dragon-${k}:${v}`).join(';');
+    // Blend a #hex color toward white (t = 0..1)
+    const lighten = (hex, t) => '#' + [1, 3, 5].map(i => {
+      const v = parseInt(hex.slice(i, i + 2), 16);
+      return Math.round(v + (255 - v) * t).toString(16).padStart(2, '0');
+    }).join('');
+    const hexAlpha = (hex, a) => `rgb(${[1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(' ')} / ${a})`;
+
     // How far past Mega form 3 the dragon is (0 = form 3 or below), and that step's colors
     const megaPower = (stars) => Math.max(0, Math.min(stars, MEGA_FORMS) - 3);
-    const megaWarm = (stars) => megaPower(stars) > 0 ? MEGA_WARM_STEPS[Math.min(megaPower(stars), MEGA_WARM_STEPS.length) - 1] : null;
+    // Colors for the bigger Mega forms, from the dragon type's aura ramp
+    const megaWarm = (stars, sp) => {
+      const power = megaPower(stars);
+      if (power <= 0) return null;
+      const outer = sp.ramp[Math.min(power, sp.ramp.length) - 1];
+      return { outer, inner: lighten(outer, 0.5), bolt: sp.bolt, vein: lighten(outer, 0.2), glow: hexAlpha(outer, 0.85) };
+    };
 
     // Kept outside the mic meter so slider/boost changes made before the mic starts aren't lost
     const micSettings = { threshold: 30, gainBoost: 2.5 };
@@ -1629,6 +1763,7 @@
       dragonLevelNum: document.getElementById('dragonLevelNum'),
       dragonLevelName: document.getElementById('dragonLevelName'),
       dragonFamily: document.getElementById('dragonFamily'),
+      galleryModal: document.getElementById('galleryModal'),
       dragonGenLabel: document.getElementById('dragonGenLabel'),
       dragonMood: document.getElementById('dragonMood'),
       dragonTrack: document.getElementById('dragonTrack'),
@@ -1905,6 +2040,8 @@
       state.dragonLevel = 0;
       state.dragonBest = 0;
       state.dragonFamily = 0;
+      state.dragonLineage = [];
+      state.speciesBag = [];
       state.milestones = [];
       renderMilestones();
       renderDragon();
@@ -2078,21 +2215,59 @@
     /* ==========================================================================
        MILESTONES
        ========================================================================== */
-    const DRAGON_LEVELS = [
-      { name: 'Dragon Egg',       short: 'Egg' },
-      { name: 'Hatching!',        short: 'Hatch',    title: 'The egg is hatching!',         sub: 'Shhh… a baby dragon is peeking out!' },
-      { name: 'Baby Dragon',      short: 'Baby',     title: 'A baby dragon is born!',       sub: 'Keep it calm so it can grow!' },
-      { name: 'Young Dragon',     short: 'Young',    title: 'Your dragon is growing up!',   sub: 'Look at those wings!' },
-      { name: 'Adult Dragon',     short: 'Adult',    title: 'Your dragon is all grown up!', sub: 'Something big is coming…' },
-      { name: 'MEGA DRAGON',      short: 'Mega',     title: 'MEGA DRAGON POWER!',           sub: 'Legendary focus, class!' },
-      { name: 'Storm Dragon',     short: 'Storm',    title: 'STORM DRAGON!',                sub: 'Lightning crackles and power veins glow across its skin!' },
-      { name: 'Spikey Dragon',    short: 'Spikey',   title: 'SPIKEY DRAGON!',               sub: 'New horns and spikes burst out!' },
-      { name: 'Blazing Dragon',   short: 'Blazing',  title: 'BLAZING DRAGON!',              sub: 'Its aura explodes into golden flame!' },
-      { name: 'Inferno Dragon',   short: 'Inferno',  title: 'INFERNO DRAGON!!',             sub: 'Fire horns, giant wings and an orange inferno!' },
-      { name: 'Thunder King',     short: 'Thunder',  title: 'THUNDER KING!!',               sub: 'A crown of horns and roaring thunder!' },
-      { name: 'Volcano Dragon',   short: 'Volcano',  title: 'VOLCANO DRAGON!!!',            sub: 'Crimson flames around a white-hot volcano heart!' },
-      { name: 'Legendary Sun Dragon', short: 'Legend', title: 'LEGENDARY SUN DRAGON!!!',    sub: 'The most powerful dragon ever!' },
+    // Pick the next dragon type: shuffled, no repeats until all types have appeared
+    function pickSpecies() {
+      if (state.speciesBag.length === 0) {
+        const last = state.dragonLineage.length ? state.dragonLineage[state.dragonLineage.length - 1].species : null;
+        const bag = SPECIES_KEYS.slice().sort(() => Math.random() - 0.5);
+        // Don't start the new round with the type we just had
+        if (bag.length > 1 && bag[bag.length - 1] === last) bag.unshift(bag.pop());
+        state.speciesBag = bag;
+      }
+      return { species: state.speciesBag.pop(), crown: Math.random() < 0.5 ? 'King' : 'Queen' };
+    }
+    function lineageAt(gen) {
+      while (state.dragonLineage.length <= gen) state.dragonLineage.push(pickSpecies());
+      return state.dragonLineage[gen];
+    }
+    const currentDragon = () => lineageAt(state.dragonFamily);
+    const speciesOf = (entry) => DRAGON_SPECIES[entry.species];
+    const royalName = (entry) => `${speciesOf(entry).short} ${entry.crown}`;
+
+    const GROW_STEPS = [
+      null, null,
+      { short: 'Baby',  title: 'A baby dragon is born!',       sub: 'Keep it calm so it can grow!' },
+      { short: 'Young', title: 'Your dragon is growing up!',   sub: 'Look at those wings!' },
+      { short: 'Adult', title: 'Your dragon is all grown up!', sub: 'Something big is coming…' },
     ];
+
+    // Name, track label and pop-up text for a level of a given dragon.
+    // asGoal: the final form is shown as "King or Queen?" until it is reached.
+    function levelInfo(level, entry, asGoal = false) {
+      const sp = speciesOf(entry);
+      if (level === 0) return { name: 'Dragon Egg', short: 'Egg' };
+      if (level === 1) {
+        const article = /^[AEIOU]/.test(sp.name) ? 'an' : 'a';
+        return { name: 'Hatching!', short: 'Hatch', title: `It's ${article} ${sp.name}!`, sub: 'The egg is hatching!' };
+      }
+      if (level < DRAGON_MEGA_LEVEL) {
+        const g = GROW_STEPS[level];
+        return { name: `${g.short} ${sp.short} Dragon`, short: g.short, title: g.title, sub: g.sub };
+      }
+      if (level === DRAGON_MEGA_LEVEL) {
+        const up = sp.short.toUpperCase();
+        return { name: `MEGA ${up} DRAGON`, short: 'Mega', title: `MEGA ${up} DRAGON POWER!`, sub: 'Legendary focus, class!' };
+      }
+      if (level < DRAGON_TOP_LEVEL) {
+        const [name, short, sub] = sp.forms[level - DRAGON_MEGA_LEVEL - 1];
+        const bang = level >= DRAGON_TOP_LEVEL - 1 ? '!!!' : level >= DRAGON_TOP_LEVEL - 3 ? '!!' : '!';
+        return { name, short, title: name.toUpperCase() + bang, sub };
+      }
+      if (asGoal) return { name: `${sp.short} King or Queen?`, short: '👑 ?' };
+      const royal = royalName(entry);
+      return { name: royal, short: entry.crown, title: `${royal.toUpperCase()}!!!`, sub: `All hail the ${royal}!` };
+    }
+    const levelName = (level) => levelInfo(level, currentDragon()).name;
 
     function checkDragonLevel() {
       if (state.dragonProgress >= DRAGON_MAX_PROGRESS) {
@@ -2106,7 +2281,7 @@
       const firstTime = target > state.dragonBest;
       state.dragonLevel = target;
       state.dragonBest = Math.max(state.dragonBest, target);
-      const lvl = DRAGON_LEVELS[target];
+      const lvl = levelInfo(target, currentDragon());
       const isMega = target >= DRAGON_MEGA_LEVEL;
       renderDragon();
 
@@ -2141,26 +2316,28 @@
       state.dragonGraceMs = dragonSettings.graceSec * 1000;
     }
 
-    // The final form: the Legendary dragon lays an egg and a new dragon starts growing
+    // The final form: the dragon becomes a King or Queen, lays an egg, and a new dragon starts
     function layDragonEgg() {
+      const parent = currentDragon();
+      const top = levelInfo(DRAGON_TOP_LEVEL, parent);
       state.dragonFamily++;
       state.dragonProgress = Math.max(0, state.dragonProgress - DRAGON_MAX_PROGRESS);
       state.dragonLevel = 0;
       state.dragonBest = 0;
+      addToGallery(parent);
       renderDragon();
       replayAnimation(dom.dragonWrap, 'dg-evolve', 1200);
       replayAnimation(dom.dragonFamily, 'badge-pop', 600);
       const drama = dragonDrama(DRAGON_TOP_LEVEL);
       stageFlash(drama);
       stageQuake(drama);
-      spawnStageParticles(['🥚', '💖', '✨', '🌟', '🔥', '⚡'], 34);
+      spawnStageParticles(['🥚', '👑', '💖', '✨', '🌟', '⚡'], 34);
       startGracePeriod();
       sound.playLevelUp(drama);
-      const top = DRAGON_LEVELS[DRAGON_TOP_LEVEL];
       const n = state.dragonFamily + 1;
       addMilestone('quiet', '👑', `Level ${DRAGON_TOP_LEVEL + 1}: ${top.name}`);
       addMilestone('quiet', '🥚', `The ${top.name} laid an egg! Dragon #${n} is on the way`);
-      showToast('quiet', miniDragon(DRAGON_TOP_LEVEL), top.title, `${top.sub} It laid an egg… Dragon #${n} starts growing now!`);
+      showToast('quiet', miniDragon(DRAGON_TOP_LEVEL, parent), top.title, `${top.sub} It laid an egg… Dragon #${n} starts growing now!`);
     }
 
     function addMilestone(side, icon, label) {
@@ -2194,20 +2371,26 @@
     function renderDragon() {
       const level = state.dragonLevel;
       const stars = artStars(level);
-      dom.dragonSvg.innerHTML = dragonArtFor(level);
+      const entry = currentDragon(), sp = speciesOf(entry);
+      Object.entries(sp.colors).forEach(([k, v]) => dom.dragonWrap.style.setProperty(`--dragon-${k}`, v));
+      dom.dragonSvg.innerHTML = dragonArtFor(level, entry);
       dom.dragonWrap.classList.toggle('is-mega', level >= DRAGON_MEGA_LEVEL);
-      // Stars 4+: warm glow that deepens and widens with each star
-      const warm = megaWarm(stars);
+      // Bigger Mega forms: a glow in the dragon type's colors that deepens and widens
+      const warm = megaWarm(stars, sp);
       dom.dragonSvg.style.filter = warm ? `drop-shadow(0 0 ${18 + megaPower(stars) * 3}px ${warm.glow})` : '';
       dom.dragonLevelNum.textContent = level + 1;
       const fam = state.dragonFamily;
       dom.dragonGenLabel.classList.toggle('hidden', fam === 0);
       dom.dragonGenLabel.textContent = fam > 0 ? `Dragon #${fam + 1} · ` : '';
       dom.dragonFamily.classList.toggle('hidden', fam === 0);
+      // Family corner: the last 3 grown dragons side by side, newest in front
+      const shown = state.dragonLineage.slice(Math.max(0, fam - 3), fam);
       dom.dragonFamily.innerHTML = fam > 0 ? `
-        <svg viewBox="-20 -30 280 280" class="w-full h-auto overflow-visible" aria-label="Grown dragon">${awakeArt(DRAGON_TOP_LEVEL)}</svg>
-        <div class="text-center -mt-1"><span class="inline-block px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-violet-950/80 text-pink-300 border border-pink-500/50 whitespace-nowrap">👑 Family${fam > 1 ? ` ×${fam}` : ''}</span></div>` : '';
-      dom.dragonLevelName.textContent = DRAGON_LEVELS[level].name;
+        <div class="flex items-end">${shown.map((e, i) => `
+          <svg viewBox="-20 -30 280 280" class="w-14 sm:w-20 h-auto overflow-visible ${i > 0 ? '-ml-5 sm:-ml-7' : ''}" aria-label="${royalName(e)}"><title>${royalName(e)}</title>${awakeArt(DRAGON_TOP_LEVEL, e)}</svg>`).join('')}
+        </div>
+        <div class="-mt-1"><span class="inline-block px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-violet-950/80 text-pink-300 border border-pink-500/50 whitespace-nowrap">👑 Family${fam > 1 ? ` ×${fam}` : ''}</span></div>` : '';
+      dom.dragonLevelName.textContent = levelInfo(level, entry).name;
       dom.dragonLevelName.classList.toggle('text-pink-300', level >= DRAGON_MEGA_LEVEL);
 
       // Level track: only forms the class has reached, plus the next goal, then a mystery "?"
@@ -2217,7 +2400,7 @@
       const last = Math.min(DRAGON_TOP_LEVEL, Math.max(state.dragonBest, level + 1));
       let track = first > 0 ? chip('border-violet-700 bg-violet-950/50 text-slate-500 !flex-none w-8', '…') : '';
       for (let i = first; i <= last; i++) {
-        const l = DRAGON_LEVELS[i];
+        const l = levelInfo(i, entry, i > level);
         let cls;
         if (i === level) cls = 'border-quiet-300 bg-quiet-400 text-violet-950';
         else if (i < level) cls = 'border-quiet-400/70 bg-quiet-500/25 text-quiet-200';
@@ -2247,7 +2430,7 @@
         if (level > 0) time = `shrinks in ${formatShort((p - levelStart) * loudLevelMs())}`;
         else time = p > 0 ? 'egg cooling down' : '';
       } else {
-        label = `Next: ${DRAGON_LEVELS[level + 1].name}`;
+        label = `Next: ${levelInfo(level + 1, currentDragon(), true).name}`;
         time = `${formatShort((level + 1 - p) * quietLevelMs())} of quiet`;
       }
       if (dom.dragonNextLabel.textContent !== label) dom.dragonNextLabel.textContent = label;
@@ -2339,13 +2522,17 @@
     };
 
     // Levels past Mega use the Mega drawing with that many transformations
-    const dragonArtFor = (level) => dragonArt(Math.min(level, DRAGON_MEGA_LEVEL), artStars(level));
+    // Wrapped in the dragon type's colors so it looks right anywhere (stage, pop-ups, family, gallery)
+    const dragonArtFor = (level, entry = currentDragon()) => {
+      const sp = speciesOf(entry);
+      return `<g style="${speciesStyle(sp)}">${dragonArt(Math.min(level, DRAGON_MEGA_LEVEL), artStars(level), sp)}</g>`;
+    };
 
     // Small copies (pop-ups, family) never sleep, so leave out the "Zzz"
-    const awakeArt = (level) => dragonArtFor(level).replace(/<g class="dg-zzz">.*?<\/g>/s, '');
+    const awakeArt = (level, entry) => dragonArtFor(level, entry).replace(/<g class="dg-zzz">.*?<\/g>/s, '');
 
-    function miniDragon(level) {
-      return `<svg viewBox="-10 -10 260 260" class="w-16 h-16 overflow-visible">${awakeArt(level)}</svg>`;
+    function miniDragon(level, entry) {
+      return `<svg viewBox="-10 -10 260 260" class="w-16 h-16 overflow-visible">${awakeArt(level, entry)}</svg>`;
     }
 
     // A lightning bolt: dark outline, colored glow, white-hot core
@@ -2413,7 +2600,56 @@
     }
 
     // stars = Mega transformation number (levels past Mega): 1 lightning, 2 veins, 3 extra horns & spikes, 4+ storm
-    function dragonArt(level, stars = 0) {
+    // Each dragon type's signature look. 'head' parts are drawn just behind the head,
+    // 'body' parts on top of the body.
+    function speciesFeature(kind, g, where) {
+      const { headCy, headTop, headRx, headRy, bodyCy, bodyRx, bodyRy } = g;
+      if (where === 'head') {
+        if (kind === 'ice') {
+          return [-16, 0, 16].map((dx, i) => {
+            const x = 120 + dx, tall = i === 1 ? 26 : 18;
+            return `<path d="M${f1(x - 6)} ${f1(headTop + 10)} L${f1(x)} ${f1(headTop - tall)} L${f1(x + 6)} ${f1(headTop + 10)} Z" fill="#f0f9ff" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round"/>`;
+          }).join('');
+        }
+        if (kind === 'river') {
+          return [-1, 1].map(s => `<g transform="translate(${f1(120 + s * headRx * 0.92)} ${f1(headCy - headRy * 0.05)}) scale(${s} 1)">
+            <path class="dg-wing dg-outline" d="M0 -12 L26 -22 L16 -7 L30 0 L16 7 L26 20 L0 12 Z"/></g>`).join('');
+        }
+        if (kind === 'forest') {
+          const y = headTop + 6;
+          return `<path d="M120 ${f1(y)} Q117 ${f1(y - 12)} 121 ${f1(y - 22)}" stroke="rgb(var(--dragon-wing-dark))" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <ellipse cx="110" cy="${f1(y - 20)}" rx="11" ry="5.5" class="dg-wing dg-outline" transform="rotate(-30 110 ${f1(y - 20)})"/>
+            <ellipse cx="131" cy="${f1(y - 25)}" rx="12" ry="6" class="dg-wing dg-outline" transform="rotate(25 131 ${f1(y - 25)})"/>`;
+        }
+        if (kind === 'lightning') {
+          const t = headTop;
+          return `<path class="dg-belly dg-outline" d="M98 ${f1(t + 12)} L104 ${f1(t - 12)} L111 ${f1(t + 1)} L120 ${f1(t - 24)} L129 ${f1(t + 1)} L136 ${f1(t - 12)} L142 ${f1(t + 12)} Z"/>`;
+        }
+        return '';
+      }
+      // body
+      if (kind === 'mountain') {
+        const rock = (x, y, r) => `<path d="M${f1(x - r)} ${f1(y + r * 0.3)} L${f1(x - r * 0.5)} ${f1(y - r * 0.8)} L${f1(x + r * 0.6)} ${f1(y - r * 0.9)} L${f1(x + r)} ${f1(y + r * 0.2)} L${f1(x + r * 0.2)} ${f1(y + r * 0.9)} Z" fill="#78716c" class="dg-outline"/>
+          <circle cx="${f1(x - r * 0.2)}" cy="${f1(y - r * 0.6)}" r="${f1(r * 0.28)}" fill="#84cc16"/>`;
+        return [-1, 1].map(s => rock(120 + s * bodyRx * 0.72, bodyCy - bodyRy * 0.55, 9) + rock(120 + s * bodyRx * 0.86, bodyCy - bodyRy * 0.05, 7)).join('');
+      }
+      if (kind === 'volcano') {
+        return [-1, 1].map(s => {
+          const x = 120 + s * bodyRx * 0.8, y = bodyCy - bodyRy * 0.3;
+          const d = `M${f1(x)} ${f1(y)} L${f1(x - s * 6)} ${f1(y + 12)} L${f1(x - s * 2)} ${f1(y + 22)} L${f1(x - s * 8)} ${f1(y + 32)}`;
+          return `<path d="${d}" stroke="#fb923c" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" stroke="#fde68a" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+        }).join('');
+      }
+      if (kind === 'cosmic') {
+        const star = (x, y, r) => `<path d="M${f1(x)} ${f1(y - r)} L${f1(x + r * 0.3)} ${f1(y - r * 0.3)} L${f1(x + r)} ${f1(y)} L${f1(x + r * 0.3)} ${f1(y + r * 0.3)} L${f1(x)} ${f1(y + r)} L${f1(x - r * 0.3)} ${f1(y + r * 0.3)} L${f1(x - r)} ${f1(y)} L${f1(x - r * 0.3)} ${f1(y - r * 0.3)} Z" fill="white" opacity="0.9"/>`;
+        return star(120 - bodyRx * 0.75, bodyCy - bodyRy * 0.4, 5) + star(120 + bodyRx * 0.8, bodyCy - bodyRy * 0.1, 4) +
+          star(120 - bodyRx * 0.85, bodyCy + bodyRy * 0.3, 3.5) + star(120 + bodyRx * 0.7, bodyCy + bodyRy * 0.5, 3) +
+          star(120 - headRx * 0.15, headCy - headRy * 0.75, 3);
+      }
+      return '';
+    }
+
+    function dragonArt(level, stars = 0, sp = DRAGON_SPECIES.volcano) {
       const shadow = (rx) => `<ellipse cx="120" cy="224" rx="${rx}" ry="8" class="dg-ink" opacity="0.28"/>`;
 
       if (level === 0) {
@@ -2444,8 +2680,9 @@
       const headTop = headCy - p.headRy;
       let parts = '';
       // Stars 4+: growth factor and warm colors
-      const power = megaPower(stars), warm = megaWarm(stars);
-      const veinColor = warm ? warm.vein : undefined;
+      const power = megaPower(stars), warm = megaWarm(stars, sp);
+      const veinColor = warm ? warm.vein : sp.ramp[1];
+      const geo = { headCy, headTop, headRx: p.headRx, headRy: p.headRy, bodyCy, bodyRx: p.bodyRx, bodyRy: p.bodyRy };
 
       // Mega aura (behind everything)
       if (p.mega) {
@@ -2454,7 +2691,7 @@
         const innerFill = warm ? ` style="fill:${warm.inner}"` : '';
         const innerPath = 'M60 222 C46 180 54 140 72 112 L80 134 C82 98 100 70 110 48 L120 78 L130 48 C140 70 158 98 160 134 L168 112 C186 140 194 180 180 222 Z';
         // Star 9+: a white-hot core inside the flames
-        const core = power >= 6 ? `<path fill="#fef08a" opacity="${power >= 7 ? 0.85 : 0.7}" transform="translate(120 222) scale(0.86 0.9) translate(-120 -222)" d="${innerPath}"/>` : '';
+        const core = power >= 6 ? `<path fill="${sp.core}" opacity="${power >= 7 ? 0.85 : 0.7}" transform="translate(120 222) scale(0.86 0.9) translate(-120 -222)" d="${innerPath}"/>` : '';
         parts += `<g transform="translate(120 222) scale(${f1(sc * 1000) / 1000}) translate(-120 -222)"><g class="dg-aura">
           <path class="dg-horn"${outerFill} opacity="${f1(Math.min(0.95, 0.6 + power * 0.05) * 100) / 100}" d="M30 222 C8 170 20 118 46 84 L56 112 C56 64 80 34 98 4 L108 50 L120 -12 L132 50 L142 4 C160 34 184 64 184 112 L194 84 C220 118 232 170 210 222 Z"/>
           <path class="dg-belly"${innerFill} opacity="0.6" d="${innerPath}"/>
@@ -2513,6 +2750,7 @@
         const y = bcy + o * bry, w = brx * Math.sqrt(1 - o * o) * 0.85;
         parts += `<path d="M${f1(120 - w)} ${f1(y)} Q120 ${f1(y + 5)} ${f1(120 + w)} ${f1(y)}" stroke="rgb(var(--dragon-shade))" stroke-width="2.5" fill="none" opacity="0.45" stroke-linecap="round"/>`;
       });
+      parts += speciesFeature(sp.feature, geo, 'body');
       // Star 2+: glowing veins and cracks across the skin
       if (stars >= 2) {
         [-1, 1].forEach(s => {
@@ -2567,6 +2805,7 @@
         parts += `<path class="dg-wing" d="M${f1(cx - 6)} ${f1(headTop + 6)} L${f1(cx)} ${f1(headTop - 10 - tall)} L${f1(cx + 6)} ${f1(headTop + 6)} Z"/>`;
       }
 
+      parts += speciesFeature(sp.feature, geo, 'head');
       // Head
       parts += `<ellipse cx="124" cy="${f1(headCy)}" rx="${p.headRx}" ry="${p.headRy}" class="dg-shade"/>
         <ellipse cx="120" cy="${f1(headCy)}" rx="${p.headRx}" ry="${p.headRy}" class="dg-body"/>
@@ -2596,7 +2835,7 @@
         'M120 -46 L110 -26 L122 -22 L112 -2',
       ];
       if (stars >= 1) {
-        BOLTS.slice(0, 2 + power).forEach(d => { sparks += lightningBolt(d, warm ? warm.bolt : undefined); });
+        BOLTS.slice(0, 2 + power).forEach(d => { sparks += lightningBolt(d, warm ? warm.bolt : sp.bolt); });
       }
 
       const zx = f1(120 + (p.headRx * 0.9) * p.k), zy = f1(222 - (222 - headTop) * p.k + 10);
@@ -2657,9 +2896,9 @@
         duration: formatTime(totalTimeMs, false),
         loudShare: `${loudPercent}%`,
         quietShare: `${quietPercent}%`,
-        dragonBest: DRAGON_LEVELS[state.dragonFamily > 0 ? DRAGON_TOP_LEVEL : state.dragonBest].name,
+        dragonBest: state.dragonFamily > 0 ? state.dragonLineage.slice(0, state.dragonFamily).map(royalName).join(', ') : levelName(state.dragonBest),
         dragonFamily: state.dragonFamily,
-        dragonFinal: DRAGON_LEVELS[state.dragonLevel].name
+        dragonFinal: levelName(state.dragonLevel)
       };
 
       state.classLogs.unshift(newLog);
@@ -2704,7 +2943,7 @@
           <td class="py-2.5 px-3 font-mono font-bold">${log.duration}</td>
           <td class="py-2.5 px-3 font-mono font-bold text-loud-400">${log.loudShare}</td>
           <td class="py-2.5 px-3 font-mono font-bold text-quiet-300">${log.quietShare}</td>
-          <td class="py-2.5 px-3 font-semibold"><div class="text-quiet-300 whitespace-nowrap">🏆 Best: ${log.dragonBest}</div>${log.dragonFamily ? `<div class="text-xs text-pink-300 whitespace-nowrap">👑 Dragons raised: ${log.dragonFamily}</div>` : ''}<div class="text-xs text-slate-400 whitespace-nowrap">Ended as: ${log.dragonFamily ? `Dragon #${log.dragonFamily + 1}, ` : ''}${log.dragonFinal}</div></td>
+          <td class="py-2.5 px-3 font-semibold"><div class="text-quiet-300">🏆 ${log.dragonFamily ? 'Raised' : 'Best'}: ${log.dragonBest}</div>${log.dragonFamily ? `<div class="text-xs text-pink-300 whitespace-nowrap">👑 Dragons raised: ${log.dragonFamily}</div>` : ''}<div class="text-xs text-slate-400 whitespace-nowrap">Ended as: ${log.dragonFamily ? `Dragon #${log.dragonFamily + 1}, ` : ''}${log.dragonFinal}</div></td>
         </tr>
       `).join('');
     }
@@ -3060,6 +3299,7 @@
           e.preventDefault();
           toggleFullscreen();
         } else if (e.key === 'Escape') {
+          closeGallery();
           dom.settingsModal.classList.add('hidden');
           dom.logsModal.classList.add('hidden');
           dom.calibrateModal.classList.add('hidden');
@@ -3074,6 +3314,7 @@
     window.addEventListener('load', () => {
       setupEvents();
       setupFullscreen();
+      setupGallery();
       startTimerLoop();
       updateDisplay();
       applyVisualState();
@@ -3095,6 +3336,84 @@
         });
       }
     });
+
+    /* ==========================================================================
+       DRAGON GALLERY (per class name, saved in this browser)
+       ========================================================================== */
+    const GALLERY_KEY = 'quietloud-gallery';
+    const galleryClass = () => dom.classNameInput.value.trim() || 'Untitled Class';
+    function loadGallery() {
+      try {
+        const all = JSON.parse(localStorage.getItem(GALLERY_KEY) || '{}');
+        return all && typeof all === 'object' ? all : {};
+      } catch (e) { return {}; }
+    }
+    function saveGallery(all) {
+      try { localStorage.setItem(GALLERY_KEY, JSON.stringify(all)); } catch (e) {}
+    }
+    // Called when a dragon reaches its final form
+    function addToGallery(entry) {
+      const all = loadGallery();
+      const cls = galleryClass();
+      (all[cls] = all[cls] || []).push({ species: entry.species, crown: entry.crown, date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) });
+      saveGallery(all);
+    }
+
+    function renderGallery() {
+      const cls = galleryClass();
+      const list = loadGallery()[cls] || [];
+      const found = SPECIES_KEYS.filter(k => list.some(e => e.species === k)).length;
+      document.getElementById('galleryTitle').textContent = `${cls}'s Dragon Gallery`;
+      document.getElementById('gallerySummary').textContent = list.length === 0
+        ? 'No dragons yet. Raise a dragon all the way to King or Queen to add it here!'
+        : `${found} of ${SPECIES_KEYS.length} dragon types discovered · ${list.length} dragon${list.length === 1 ? '' : 's'} raised`;
+
+      document.getElementById('galleryGrid').innerHTML = SPECIES_KEYS.map(key => {
+        const sp = DRAGON_SPECIES[key];
+        const mine = list.filter(e => e.species === key);
+        if (mine.length === 0) {
+          // Not discovered yet: a dark silhouette keeps it a mystery
+          return `<div class="rounded-2xl border-2 border-dashed border-violet-700 bg-violet-950/60 p-3 flex flex-col items-center text-center">
+            <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible" style="filter: brightness(0); opacity: 0.35">${awakeArt(DRAGON_TOP_LEVEL, { species: key, crown: 'King' })}</svg>
+            <div class="font-display font-bold text-lg text-slate-500 mt-1">???</div>
+            <div class="text-[11px] text-slate-500">Not discovered yet</div>
+          </div>`;
+        }
+        const kings = mine.filter(e => e.crown === 'King').length, queens = mine.length - kings;
+        const latest = mine[mine.length - 1];
+        const crowns = [kings ? `👑 ${kings} King${kings === 1 ? '' : 's'}` : '', queens ? `👑 ${queens} Queen${queens === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+        return `<div class="on-color rounded-2xl border-2 p-3 flex flex-col items-center text-center" style="border-color: rgb(${sp.colors.body}); background: rgb(${sp.colors['wing-dark']} / 0.22)">
+          <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible">${awakeArt(DRAGON_TOP_LEVEL, latest)}</svg>
+          <div class="font-display font-bold text-lg text-white mt-1">${sp.name}</div>
+          <div class="text-xs font-bold text-pink-300">${crowns}</div>
+          <div class="text-[11px] text-slate-400">First raised ${mine[0].date}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function openGallery() {
+      renderGallery();
+      dom.galleryModal.classList.remove('hidden');
+      dom.galleryModal.classList.add('flex');
+    }
+    function closeGallery() {
+      dom.galleryModal.classList.add('hidden');
+      dom.galleryModal.classList.remove('flex');
+    }
+    function setupGallery() {
+      document.getElementById('galleryBtn').addEventListener('click', openGallery);
+      document.getElementById('closeGalleryBtn').addEventListener('click', closeGallery);
+      dom.galleryModal.addEventListener('click', (e) => { if (e.target === dom.galleryModal) closeGallery(); });
+      document.getElementById('clearGalleryBtn').addEventListener('click', () => {
+        const cls = galleryClass();
+        const all = loadGallery();
+        if (!all[cls] || all[cls].length === 0) return;
+        if (!confirm(`Remove all dragons from ${cls}'s gallery? This can't be undone.`)) return;
+        delete all[cls];
+        saveGallery(all);
+        renderGallery();
+      });
+    }
 
     /* ==========================================================================
        FULL SCREEN (button in the header, or press F; Esc also exits)
@@ -3193,7 +3512,7 @@
       renderDragon();
       updateDragonMood();
       const who = family > 0 ? `dragon #${family + 1} is now` : 'dragon is now';
-      addMilestone('quiet', '🔄', `Level timing changed: ${who} ${DRAGON_LEVELS[level].name}`);
+      addMilestone('quiet', '🔄', `Level timing changed: ${who} ${levelName(level)}`);
     }
 
     function renderDragonSettings() {
