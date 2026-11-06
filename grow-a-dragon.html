@@ -3997,10 +3997,30 @@
               <div class="text-[11px] text-slate-400 truncate">Now raising: ${dragonName} · 👑 ${r.queens} · 🐉 ${r.types}/${SPECIES_KEYS.length} · 🧪 ${r.hybrids}</div>
             </div>
             <div class="shrink-0 text-right font-bold text-amber-200 text-sm">${tab.show(r)}</div>
+            <button type="button" data-delete-class="${escapeHtml(r.name)}" title="Delete ${escapeHtml(r.name)}" aria-label="Delete ${escapeHtml(r.name)}" class="shrink-0 w-8 h-8 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-900/40 transition">🗑</button>
           </div>`;
         }).join('');
       document.querySelectorAll('[data-lb-tab]').forEach(btn => btn.addEventListener('click', () => { leaderboardTab = btn.dataset.lbTab; renderLeaderboard(); }));
+      document.querySelectorAll('[data-delete-class]').forEach(btn => btn.addEventListener('click', () => deleteClass(btn.dataset.deleteClass)));
     }
+    // Delete a class: its saved dragon and Gallery (Classes Log records are kept)
+    function deleteClass(name) {
+      if (!confirm(`Delete "${name}"?\n\nThis removes its dragon and its Dragon Gallery for good. Saved records in the Classes Log are kept.`)) return;
+      const classes = loadClasses(); delete classes[name]; saveClasses(classes);
+      const gallery = loadGallery(); delete gallery[name]; saveGallery(gallery);
+      if (name === state.currentClass) {
+        // Don't save the deleted class again; move to another class (or a fresh one)
+        state.currentClass = '';
+        state.activeTimer = null;
+        const next = allClassNames()[0] || 'Room 101';
+        loadClass(next);
+        resetAllTimers(true);
+        showToast('quiet', miniDragon(state.dragonLevel, currentDragon()), `Deleted ${escapeHtml(name)}`, `Now on stage: ${escapeHtml(next)}`);
+      }
+      renderClassList();
+      renderLeaderboard();
+    }
+
     function openLeaderboard() {
       renderLeaderboard();
       dom.leaderboardModal.classList.remove('hidden');
