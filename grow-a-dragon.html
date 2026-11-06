@@ -1897,15 +1897,35 @@
        show, and the Mega forms alternate between the parents. */
     const mixRgb = (a, b) => a.split(' ').map((v, i) => Math.round((Number(v) + Number(b.split(' ')[i])) / 2)).join(' ');
     const mixHex = (a, b) => '#' + [1, 3, 5].map(i => Math.round((parseInt(a.slice(i, i + 2), 16) + parseInt(b.slice(i, i + 2), 16)) / 2).toString(16).padStart(2, '0')).join('');
+    /* ---------- Genes ----------
+       Every dragon carries: species = body type, mix = wing type (hybrids only),
+       feats = signature features (up to 3), gen = generation (1 for the 8 types).
+       Older saved hybrids have no feats/gen: they count as Gen 2 with both parents' features. */
+    const MAX_FEATURES = 3;
+    const featsOf = (e) => e.feats || (e.mix ? [DRAGON_SPECIES[e.species].feature, DRAGON_SPECIES[e.mix].feature] : [DRAGON_SPECIES[e.species].feature]);
+    const genOf = (e) => e.gen || (e.mix ? 2 : 1);
+    const wingOf = (e) => e.mix || e.species;
+    // One key per distinct dragon look (used to group the Gallery)
+    const dragonKey = (e) => e.mix ? `${e.species}+${e.mix}+${featsOf(e).join('.')}+g${genOf(e)}` : e.species;
+    // Just the genes (no parents), for storing a dragon's parents
+    const genesOnly = (e) => (e.mix ? { species: e.species, mix: e.mix, feats: featsOf(e), gen: genOf(e) } : { species: e.species });
+
+    // Breed two dragons: body from the first, wings from the second, features from both
+    function breed(p1, p2) {
+      const feats = [...new Set([...featsOf(p1), ...featsOf(p2)])].slice(0, MAX_FEATURES);
+      return { species: p1.species, mix: wingOf(p2), feats, gen: Math.max(genOf(p1), genOf(p2)) + 1, parents: [genesOnly(p1), genesOnly(p2)], crown: 'Queen' };
+    }
+
     const hybridCache = {};
-    function hybridSpecies(a, b) {
-      const key = `${a}+${b}`;
+    function hybridSpecies(a, b, feats) {
+      feats = feats || [DRAGON_SPECIES[a].feature, DRAGON_SPECIES[b].feature];
+      const key = `${a}+${b}+${feats.join('.')}`;
       if (hybridCache[key]) return hybridCache[key];
       const A = DRAGON_SPECIES[a], B = DRAGON_SPECIES[b];
       const short = `${DRAGON_CARD[a].adj} ${B.short}`;
       return (hybridCache[key] = {
         name: `${short} Dragon`, short, hybrid: true, parents: [a, b],
-        features: [A.feature, B.feature],
+        features: feats,
         colors: { body: A.colors.body, shade: A.colors.shade, belly: mixRgb(A.colors.belly, B.colors.belly), wing: B.colors.wing, 'wing-dark': B.colors['wing-dark'], horn: B.colors.horn, cheek: A.colors.cheek, ink: A.colors.ink },
         ramp: A.ramp.map((c, i) => mixHex(c, B.ramp[i])), bolt: B.bolt, core: A.core,
         forms: A.forms.map((f, i) => (i % 2 ? B.forms[i] : f)),
@@ -1915,11 +1935,13 @@
     // Card details for a dragon (type or hybrid)
     function cardInfo(entry) {
       if (!entry.mix) return DRAGON_CARD[entry.species];
-      const A = DRAGON_CARD[entry.species], B = DRAGON_CARD[entry.mix];
+      const A = DRAGON_CARD[entry.species], B = DRAGON_CARD[entry.mix], gen = genOf(entry);
+      const parentNames = (entry.parents || [{ species: entry.species }, { species: entry.mix }]).map(p => speciesOf(p).name);
       return {
-        stats: A.stats.map((v, i) => Math.min(10, Math.round((v + B.stats[i]) / 2) + 1)),
-        ability: [`${A.ability[0]} + ${B.ability[0]}`, 'Combines the powers of both parent dragons.'],
-        flavor: `A rare blend of ${withArticle(DRAGON_SPECIES[entry.species].name)} and ${withArticle(DRAGON_SPECIES[entry.mix].name)}.`,
+        // Each generation adds +1 to every stat (hybrid vigor), up to 10
+        stats: A.stats.map((v, i) => Math.min(10, Math.round((v + B.stats[i]) / 2) + gen - 1)),
+        ability: [`${A.ability[0]} + ${B.ability[0]}`, gen > 2 ? `Carries the powers of ${featsOf(entry).length} dragon types.` : 'Combines the powers of both parent dragons.'],
+        flavor: `Bred from ${withArticle(parentNames[0])} and ${withArticle(parentNames[1])}.`,
       };
     }
     const speciesStyle = (sp) => Object.entries(sp.colors).map(([k, v]) => `--dragon-${k}:${v}`).join(';');
@@ -2447,7 +2469,7 @@
       return state.dragonLineage[gen];
     }
     const currentDragon = () => lineageAt(state.dragonFamily);
-    const speciesOf = (entry) => entry.mix ? hybridSpecies(entry.species, entry.mix) : DRAGON_SPECIES[entry.species];
+    const speciesOf = (entry) => entry.mix ? hybridSpecies(entry.species, entry.mix, featsOf(entry)) : DRAGON_SPECIES[entry.species];
     // Only Queens lay eggs, so every grown dragon is a Queen (even older saved "Kings")
     const royalName = (entry) => `${speciesOf(entry).short} Queen`;
 
@@ -3807,7 +3829,7 @@
     function addToGallery(entry) {
       const all = loadGallery();
       const cls = galleryClass();
-      (all[cls] = all[cls] || []).push({ species: entry.species, ...(entry.mix ? { mix: entry.mix } : {}), crown: entry.crown, rarity: entry.rarity || 'common', date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) });
+      (all[cls] = all[cls] || []).push({ species: entry.species, ...(entry.mix ? { mix: entry.mix, feats: featsOf(entry), gen: genOf(entry), ...(entry.parents ? { parents: entry.parents } : {}) } : {}), crown: entry.crown, rarity: entry.rarity || 'common', date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) });
       saveGallery(all);
     }
 
@@ -3818,7 +3840,7 @@
     function galleryGroups(list) {
       const groups = {};
       list.forEach(e => {
-        const key = e.mix ? `${e.species}+${e.mix}` : e.species;
+        const key = dragonKey(e);
         if (!groups[key]) { groups[key] = []; groups[key].first = e.date; } // saved in the order raised
         groups[key].push(e);
       });
@@ -3829,7 +3851,7 @@
     function galleryCardHtml(key, mine, growTag = '') {
       const best = mine[0];
       const sp = speciesOf(best);
-      const blendable = galleryBlend.on && !best.mix;
+      const blendable = galleryBlend.on;
       const pick = galleryBlend.picks.indexOf(key);
       const ring = pick >= 0 ? 'ring-4 ring-pink-400' : '';
       const badge = pick >= 0 ? `<span class="absolute top-2 left-2 w-7 h-7 rounded-full bg-pink-500 text-white font-bold flex items-center justify-center">${pick + 1}</span>` : '';
@@ -3837,6 +3859,7 @@
         ${badge}
         <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible">${awakeArt(DRAGON_TOP_LEVEL, best)}</svg>
         <div class="font-display font-bold text-lg text-white mt-1 leading-tight">${sp.name}</div>
+        ${best.mix ? `<div class="text-[11px] font-bold text-quiet-200">🧬 Gen ${genOf(best)} · ${featsOf(best).map(f => DRAGON_SPECIES[f].short).join(' + ')}</div>` : ''}
         <div class="text-xs font-bold text-pink-300">👑 ${mine.length} Queen${mine.length === 1 ? '' : 's'}</div>
         <div class="my-1">Rarest: ${rarityPill(rarityOf(best))}</div>
         <div class="text-[11px] text-slate-400">First raised ${mine.first || ''}</div>
@@ -3874,21 +3897,22 @@
         </div>`;
 
       // Blend bar
-      const canBlend = found >= 2;
+      const canBlend = Object.keys(groups).length >= 2;
       let blend;
       if (!galleryBlend.on) {
         blend = `<div class="flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-dashed border-pink-500/50 bg-pink-500/5 px-4 py-3">
-          <div class="text-sm text-slate-300"><span class="font-bold text-pink-300">🧪 Dragon Lab:</span> blend two discovered dragons to make a hybrid egg!</div>
-          <button type="button" id="blendStartBtn" class="px-4 py-2 rounded-xl text-sm font-bold transition ${canBlend ? 'bg-pink-500 hover:bg-pink-400 text-white' : 'bg-violet-800 text-slate-500 cursor-not-allowed'}" ${canBlend ? '' : 'disabled title="Discover 2 dragon types first"'}>🧪 Blend</button>
+          <div class="text-sm text-slate-300"><span class="font-bold text-pink-300">🧪 Dragon Lab:</span> blend two raised dragons (hybrids too!) to make a new egg.</div>
+          <button type="button" id="blendStartBtn" class="px-4 py-2 rounded-xl text-sm font-bold transition ${canBlend ? 'bg-pink-500 hover:bg-pink-400 text-white' : 'bg-violet-800 text-slate-500 cursor-not-allowed'}" ${canBlend ? '' : 'disabled title="Raise 2 different dragons first"'}>🧪 Blend</button>
         </div>`;
       } else {
         const [a, b] = galleryBlend.picks;
-        const preview = a && b ? { species: a, mix: b, crown: 'Queen' } : null;
+        const pa = a && groups[a] ? groups[a][0] : null, pb = b && groups[b] ? groups[b][0] : null;
+        const preview = pa && pb ? breed(pa, pb) : null;
         blend = `<div class="flex flex-wrap items-center gap-4 rounded-2xl border-2 border-pink-400 bg-pink-500/10 px-4 py-3">
           ${preview ? `<svg viewBox="-20 -40 280 290" class="w-20 h-auto overflow-visible">${awakeArt(4, preview)}</svg>` : '<div class="w-20 h-20 rounded-xl border-2 border-dashed border-pink-400/60 flex items-center justify-center text-3xl">🧪</div>'}
           <div class="flex-1 min-w-[12rem]">
             <div class="font-bold text-pink-300">🧪 Dragon Lab</div>
-            <div class="text-sm text-slate-200">${preview ? `Blend into a <b>${speciesOf(preview).name}</b>!` : a ? `Now pick a second dragon to blend with the ${DRAGON_SPECIES[a].name}.` : 'Pick the first dragon (gives the body), then the second (gives the wings and powers).'}</div>
+            <div class="text-sm text-slate-200">${preview ? `Blend into ${withArticle(`<b>${speciesOf(preview).name}</b>`)} · 🧬 Gen ${preview.gen} with ${featsOf(preview).map(f => DRAGON_SPECIES[f].short).join(' + ')} powers!` : pa ? `Now pick a second dragon to blend with the ${speciesOf(pa).name}.` : 'Pick the first dragon (gives the body), then the second (gives the wings). Features come from both, up to 3. Hybrids can be blended too!'}</div>
           </div>
           <div class="flex gap-2">
             <button type="button" id="blendGoBtn" class="px-4 py-2 rounded-xl text-sm font-bold transition ${preview ? 'bg-pink-500 hover:bg-pink-400 text-white' : 'bg-violet-800 text-slate-500 cursor-not-allowed'}" ${preview ? '' : 'disabled'}>Blend!</button>
@@ -3923,9 +3947,10 @@
       }).join('');
 
       // Hybrids the class has raised
-      document.getElementById('galleryHybrids').innerHTML = hybridKeys.length ? `
-        <h4 class="mt-6 mb-3 font-display font-bold text-lg text-pink-300">🧪 Hybrids</h4>
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">${hybridKeys.map(k => galleryCardHtml(k, groups[k])).join('')}</div>` : '';
+      const gens = [...new Set(hybridKeys.map(k => genOf(groups[k][0])))].sort((a, b) => a - b);
+      document.getElementById('galleryHybrids').innerHTML = gens.map(g => `
+        <h4 class="mt-6 mb-3 font-display font-bold text-lg text-pink-300">🧪 Hybrids · Gen ${g}</h4>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">${hybridKeys.filter(k => genOf(groups[k][0]) === g).map(k => galleryCardHtml(k, groups[k])).join('')}</div>`).join('');
 
       bindGalleryControls(groups);
     }
@@ -3934,7 +3959,6 @@
       document.querySelectorAll('[data-gallery-key]').forEach(btn => btn.addEventListener('click', () => {
         const key = btn.dataset.galleryKey;
         if (galleryBlend.on) {
-          if (key.includes('+')) return; // hybrids can't be blended again
           const i = galleryBlend.picks.indexOf(key);
           if (i >= 0) galleryBlend.picks.splice(i, 1);
           else if (galleryBlend.picks.length < 2) galleryBlend.picks.push(key);
@@ -3951,16 +3975,16 @@
       const go = document.getElementById('blendGoBtn');
       if (go) go.addEventListener('click', () => {
         const [a, b] = galleryBlend.picks;
-        if (!a || !b) return;
+        if (!a || !b || !groups[a] || !groups[b]) return;
         galleryBlend.on = false; galleryBlend.picks = [];
-        blendDragons(a, b);
+        blendDragons(groups[a][0], groups[b][0]);
         renderGallery();
       });
     }
 
     // Make a hybrid egg: the current egg if it hasn't hatched yet, otherwise the next egg
-    function blendDragons(a, b) {
-      const entry = { species: a, mix: b, crown: 'Queen', rarity: rollRarity() };
+    function blendDragons(p1, p2) {
+      const entry = { ...breed(p1, p2), rarity: rollRarity() };
       const name = speciesOf(entry).name;
       // (messages below read "a/an <name>")
       if (state.dragonLevel === 0 && !state.dragonHiding) {
@@ -3983,9 +4007,10 @@
       if (!mine || !mine.length) return;
       const best = mine[0];
       const sp = speciesOf(best), info = cardInfo(best), r = rarityOf(best);
-      const rank = RARITY_KEYS.length - 1 - RARITY_KEYS.indexOf(best.rarity || 'common'); // 0 common … 5 legendary
+      const rIdx = RARITY_KEYS.indexOf(best.rarity);
+      const rank = rIdx < 0 ? 0 : RARITY_KEYS.length - 1 - rIdx; // 0 common … 5 legendary (unknown = common)
       const stats = info.stats.map(v => Math.min(10, v + Math.round(rank * 0.5)));
-      const number = best.mix ? 'Hybrid' : `#${String(SPECIES_KEYS.indexOf(best.species) + 1).padStart(2, '0')} / ${String(SPECIES_KEYS.length).padStart(2, '0')}`;
+      const number = best.mix ? `Hybrid · Gen ${genOf(best)}` : `#${String(SPECIES_KEYS.indexOf(best.species) + 1).padStart(2, '0')} / ${String(SPECIES_KEYS.length).padStart(2, '0')}`;
       const c = sp.colors;
       const bar = (v) => `<div class="flex gap-0.5">${Array.from({ length: 10 }, (_, i) => `<span class="h-2.5 flex-1 rounded-sm" style="background:${i < v ? `rgb(${c.horn})` : 'rgb(255 255 255 / 0.15)'}"></span>`).join('')}</div>`;
       const first = mine.first || '';
@@ -4001,7 +4026,7 @@
               <svg viewBox="-25 -50 290 300" class="absolute inset-0 w-full h-full overflow-visible">${awakeArt(DRAGON_TOP_LEVEL, best)}</svg>
             </div>
             <div class="flex items-center justify-between text-[11px] font-semibold text-white/80">
-              <span>${sp.name}${best.mix ? ` · 🧪 ${DRAGON_SPECIES[best.species].short} + ${DRAGON_SPECIES[best.mix].short}` : ''}</span>
+              <span>${sp.name}${best.mix ? ` · 🧬 ${featsOf(best).map(f => DRAGON_SPECIES[f].short).join(' + ')}` : ''}</span>
               ${rarityPill(r)}
             </div>
             <div class="rounded-xl bg-black/30 px-3 py-2">
@@ -4011,6 +4036,12 @@
             <div class="rounded-xl bg-black/30 px-3 py-2 grid grid-cols-[4.2rem_1fr_1.4rem] items-center gap-x-2 gap-y-1.5">
               ${STAT_NAMES.map((n, i) => `<span class="text-xs font-bold text-white/85">${n}</span>${bar(stats[i])}<span class="text-xs font-bold text-white text-right">${stats[i]}</span>`).join('')}
             </div>
+            ${best.mix ? (() => {
+              const ps = best.parents || [{ species: best.species }, { species: best.mix }];
+              const mini = (p) => `<div class="flex flex-col items-center min-w-0"><svg viewBox="-20 -40 280 290" class="w-14 h-auto overflow-visible">${awakeArt(DRAGON_TOP_LEVEL, { ...p, crown: 'Queen' })}</svg><span class="text-[10px] font-semibold text-white/80 text-center leading-tight">${speciesOf(p).name}</span></div>`;
+              return `<div class="rounded-xl bg-black/30 px-3 py-2"><div class="text-[11px] font-bold text-white/70 mb-1">🧬 Family tree · Gen ${genOf(best)}</div>
+                <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-1">${mini(ps[0])}<span class="text-lg text-white/70">×</span>${mini(ps[1])}</div></div>`;
+            })() : ''}
             <div class="text-[11px] italic text-white/75 px-1">“${info.flavor}”</div>
             <div class="flex items-center justify-between text-[10px] font-semibold text-white/60 border-t border-white/15 pt-1.5">
               <span>Raised by ${escapeHtml(galleryClass())} · ×${mine.length}${first ? ` · since ${first}` : ''}</span>
