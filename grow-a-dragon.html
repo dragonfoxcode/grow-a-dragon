@@ -3654,6 +3654,12 @@
       window.addEventListener('keydown', (e) => {
         if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
         const key = e.key.toLowerCase();
+        // With a dragon card open, ← → flip through its forms
+        if (cardView && !dom.cardModal.classList.contains('hidden') && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          e.preventDefault();
+          setCardLevel(cardView.level + (e.key === 'ArrowLeft' ? -1 : 1));
+          return;
+        }
 
         if (e.code === 'Space') {
           e.preventDefault();
@@ -4079,7 +4085,7 @@
       const nextEntry = state.dragonLineage[state.dragonFamily + 1];
       const queued = nextEntry && nextEntry.mix ? `<div class="text-xs font-bold text-pink-300 mt-1">🧪 Next egg: ${withArticle(speciesOf(nextEntry).name)} hybrid!</div>` : '';
       document.getElementById('galleryNow').innerHTML = `
-        <div class="mb-4 rounded-2xl border-2 border-quiet-400 bg-quiet-500/10 p-3 flex items-center gap-4">
+        <div data-current-card role="button" tabindex="0" title="Tap to see this dragon's card" class="mb-4 rounded-2xl border-2 border-quiet-400 bg-quiet-500/10 p-3 flex items-center gap-4 cursor-pointer transition hover:bg-quiet-500/20">
           <svg viewBox="-20 -40 280 290" class="w-24 sm:w-28 h-auto shrink-0 overflow-visible">${awakeArt(nowLevel, now)}</svg>
           <div class="min-w-0">
             <div class="text-xs font-bold uppercase tracking-widest text-quiet-300">🌱 Now raising${state.dragonFamily > 0 ? ` · Dragon #${state.dragonFamily + 1}` : ''}</div>
@@ -4125,7 +4131,7 @@
         if (mine) return galleryCardHtml(key, mine, growTag);
         if (growing) {
           // Not discovered yet, but the class is raising one right now: show its current form
-          return `<div class="on-color rounded-2xl border-2 border-dashed p-3 flex flex-col items-center text-center" style="border-color: rgb(${sp.colors.body}); background: rgb(${sp.colors['wing-dark']} / 0.15)">
+          return `<div data-current-card role="button" tabindex="0" class="on-color rounded-2xl border-2 border-dashed p-3 flex flex-col items-center text-center cursor-pointer transition hover:-translate-y-0.5" style="border-color: rgb(${sp.colors.body}); background: rgb(${sp.colors['wing-dark']} / 0.15)">
             <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible">${awakeArt(nowLevel, now)}</svg>
             <div class="font-display font-bold text-lg text-white mt-1">${sp.name}</div>
             <div class="text-[11px] text-slate-400">Not raised to Queen yet</div>
@@ -4150,6 +4156,7 @@
     }
 
     function bindGalleryControls(groups) {
+      document.querySelectorAll('[data-current-card]').forEach(el => el.addEventListener('click', () => { if (!galleryBlend.on) openCurrentDragonCard(); }));
       document.querySelectorAll('[data-gallery-key]').forEach(btn => btn.addEventListener('click', () => {
         const key = btn.dataset.galleryKey;
         if (galleryBlend.on) {
@@ -4198,54 +4205,88 @@
     }
 
     // Trading card for a type (or hybrid) the class has raised
+    // The card being shown: which dragon, which form (level), and how far it can be viewed
+    let cardView = null;
+
+    // Card for a type (or hybrid) the class has raised: every form, Egg to Queen
     function openDragonCard(key, mine) {
       if (!mine || !mine.length) return;
-      const best = mine[0];
+      cardView = { entry: mine[0], level: DRAGON_TOP_LEVEL, maxLevel: DRAGON_TOP_LEVEL, raised: true, count: mine.length, first: mine.first || '' };
+      renderDragonCard();
+      dom.cardModal.classList.remove('hidden');
+      dom.cardModal.classList.add('flex');
+    }
+    // Card for the dragon being raised right now: only the forms reached so far
+    function openCurrentDragonCard() {
+      cardView = { entry: currentDragon(), level: state.dragonLevel, maxLevel: state.dragonLevel, raised: false };
+      renderDragonCard();
+      dom.cardModal.classList.remove('hidden');
+      dom.cardModal.classList.add('flex');
+    }
+    function setCardLevel(level) {
+      if (!cardView) return;
+      cardView.level = Math.max(0, Math.min(cardView.maxLevel, level));
+      renderDragonCard();
+    }
+
+    function renderDragonCard() {
+      const { entry: best, level, maxLevel, raised } = cardView;
+      // An egg that hasn't hatched yet keeps its type a secret
+      const mystery = !raised && level === 0;
       const sp = speciesOf(best), info = cardInfo(best), r = rarityOf(best);
       const rIdx = RARITY_KEYS.indexOf(best.rarity);
       const rank = rIdx < 0 ? 0 : RARITY_KEYS.length - 1 - rIdx; // 0 common … 5 legendary (unknown = common)
-      const stats = info.stats.map(v => Math.min(10, v + Math.round(rank * 0.5)));
+      // Stats grow with the dragon: about a third as an egg, full strength as a Queen
+      const growth = 0.3 + 0.7 * level / DRAGON_TOP_LEVEL;
+      const stats = info.stats.map(v => Math.max(1, Math.round(Math.min(10, v + Math.round(rank * 0.5)) * growth)));
       const number = best.mix ? `Hybrid · Gen ${genOf(best)}` : `#${String(SPECIES_KEYS.indexOf(best.species) + 1).padStart(2, '0')} / ${String(SPECIES_KEYS.length).padStart(2, '0')}`;
-      const c = sp.colors;
+      const c = mystery ? { body: '148 163 184', wing: '100 116 139', 'wing-dark': '51 65 85', ink: '15 23 42', horn: '226 232 240' } : sp.colors;
       const bar = (v) => `<div class="flex gap-0.5">${Array.from({ length: 10 }, (_, i) => `<span class="h-2.5 flex-1 rounded-sm" style="background:${i < v ? `rgb(${c.horn})` : 'rgb(255 255 255 / 0.15)'}"></span>`).join('')}</div>`;
-      const first = mine.first || '';
+      const title = mystery ? 'Mystery Egg' : levelInfo(level, best).name;
+      const art = level === 0 ? `<svg viewBox="20 50 200 190" class="absolute inset-0 w-full h-full overflow-visible">${awakeArt(0, best)}</svg>`
+        : `<svg viewBox="-25 -50 290 300" class="absolute inset-0 w-full h-full overflow-visible">${awakeArt(level, best)}</svg>`;
+      // Form switcher: ◀ dots ▶
+      const dots = Array.from({ length: maxLevel + 1 }, (_, i) =>
+        `<button type="button" data-card-level="${i}" title="${mystery && i === 0 ? 'Mystery Egg' : levelInfo(i, best).name}" class="h-2.5 rounded-full transition ${i === level ? 'w-5' : 'w-2.5 opacity-50 hover:opacity-90'}" style="background: rgb(${c.horn})"></button>`).join('');
+      const navBtn = (dir, label, enabled) => `<button type="button" data-card-nav="${dir}" class="w-8 h-8 rounded-full bg-black/30 text-white font-bold ${enabled ? 'hover:bg-black/50' : 'opacity-30 cursor-default'}" ${enabled ? '' : 'disabled'} aria-label="${label}">${dir < 0 ? '◀' : '▶'}</button>`;
       document.getElementById('dragonCard').innerHTML = `
-        <div class="on-color w-[min(88vw,22rem)] rounded-[1.75rem] p-2.5 shadow-2xl" style="background: linear-gradient(145deg, rgb(${c.body}), rgb(${c.wing}) 55%, ${r.color})">
+        <div class="on-color w-[min(88vw,22rem)] rounded-[1.75rem] p-2.5 shadow-2xl" style="background: linear-gradient(145deg, rgb(${c.body}), rgb(${c.wing}) 55%, ${mystery ? '#94a3b8' : r.color})">
           <div class="rounded-[1.35rem] p-3 flex flex-col gap-2" style="background: linear-gradient(180deg, rgb(${c['wing-dark']}), rgb(${c.ink}))">
             <div class="flex items-center justify-between gap-2">
-              <div class="font-display font-bold text-xl text-white leading-tight">${royalName(best)}</div>
-              <div class="shrink-0 text-sm font-bold text-white/90">👑 Lv ${DRAGON_TOP_LEVEL + 1}</div>
+              <div class="font-display font-bold text-xl text-white leading-tight">${title}</div>
+              <div class="shrink-0 text-sm font-bold text-white/90">${level === DRAGON_TOP_LEVEL ? '👑 ' : ''}Lv ${level + 1}</div>
             </div>
             <div class="relative rounded-xl overflow-hidden border-4 aspect-[4/3]" style="border-color: rgb(${c.horn} / 0.8)">
-              ${sceneArt(best.species)}
-              <svg viewBox="-25 -50 290 300" class="absolute inset-0 w-full h-full overflow-visible">${awakeArt(DRAGON_TOP_LEVEL, best)}</svg>
+              ${mystery ? NEUTRAL_SCENE : sceneArt(best.species)}
+              ${art}
             </div>
+            ${maxLevel > 0 ? `<div class="flex items-center justify-between gap-2">${navBtn(-1, 'Previous form', level > 0)}<div class="flex flex-wrap items-center justify-center gap-1">${dots}</div>${navBtn(1, 'Next form', level < maxLevel)}</div>` : ''}
             <div class="flex items-center justify-between text-[11px] font-semibold text-white/80">
-              <span>${sp.name}${best.mix ? ` · 🧬 ${featsOf(best).map(f => DRAGON_SPECIES[f].short).join(' + ')}` : ''}</span>
+              <span>${mystery ? 'Type: ??? (hatches soon!)' : `${sp.name}${best.mix ? ` · 🧬 ${featsOf(best).map(f => DRAGON_SPECIES[f].short).join(' + ')}` : ''}`}</span>
               ${rarityPill(r)}
             </div>
             <div class="rounded-xl bg-black/30 px-3 py-2">
-              <div class="font-bold text-sm" style="color: rgb(${c.horn})">✨ ${info.ability[0]}</div>
-              <div class="text-xs text-white/85">${info.ability[1]}</div>
+              <div class="font-bold text-sm" style="color: rgb(${c.horn})">✨ ${mystery ? '???' : info.ability[0]}</div>
+              <div class="text-xs text-white/85">${mystery ? 'Keep it quiet to find out what this egg can do!' : info.ability[1]}</div>
             </div>
             <div class="rounded-xl bg-black/30 px-3 py-2 grid grid-cols-[4.2rem_1fr_1.4rem] items-center gap-x-2 gap-y-1.5">
-              ${STAT_NAMES.map((n, i) => `<span class="text-xs font-bold text-white/85">${n}</span>${bar(stats[i])}<span class="text-xs font-bold text-white text-right">${stats[i]}</span>`).join('')}
+              ${STAT_NAMES.map((n, i) => `<span class="text-xs font-bold text-white/85">${n}</span>${bar(mystery ? 0 : stats[i])}<span class="text-xs font-bold text-white text-right">${mystery ? '?' : stats[i]}</span>`).join('')}
             </div>
-            ${best.mix ? (() => {
+            ${best.mix && !mystery ? (() => {
               const ps = best.parents || [{ species: best.species }, { species: best.mix }];
               const mini = (p) => `<div class="flex flex-col items-center min-w-0"><svg viewBox="-20 -40 280 290" class="w-14 h-auto overflow-visible">${awakeArt(DRAGON_TOP_LEVEL, { ...p, crown: 'Queen' })}</svg><span class="text-[10px] font-semibold text-white/80 text-center leading-tight">${speciesOf(p).name}</span></div>`;
               return `<div class="rounded-xl bg-black/30 px-3 py-2"><div class="text-[11px] font-bold text-white/70 mb-1">🧬 Family tree · Gen ${genOf(best)}</div>
                 <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-1">${mini(ps[0])}<span class="text-lg text-white/70">×</span>${mini(ps[1])}</div></div>`;
             })() : ''}
-            <div class="text-[11px] italic text-white/75 px-1">“${info.flavor}”</div>
+            <div class="text-[11px] italic text-white/75 px-1">“${mystery ? 'Something is wiggling inside…' : info.flavor}”</div>
             <div class="flex items-center justify-between text-[10px] font-semibold text-white/60 border-t border-white/15 pt-1.5">
-              <span>Raised by ${escapeHtml(galleryClass())} · ×${mine.length}${first ? ` · since ${first}` : ''}</span>
-              <span>${number}</span>
+              <span>${raised ? `Raised by ${escapeHtml(galleryClass())} · ×${cardView.count}${cardView.first ? ` · since ${cardView.first}` : ''}` : `Being raised by ${escapeHtml(galleryClass())} · now Lv ${maxLevel + 1}`}</span>
+              <span>${mystery ? '#??' : number}</span>
             </div>
           </div>
         </div>`;
-      dom.cardModal.classList.remove('hidden');
-      dom.cardModal.classList.add('flex');
+      document.querySelectorAll('[data-card-level]').forEach(b => b.addEventListener('click', () => setCardLevel(Number(b.dataset.cardLevel))));
+      document.querySelectorAll('[data-card-nav]').forEach(b => b.addEventListener('click', () => setCardLevel(cardView.level + Number(b.dataset.cardNav))));
     }
     function closeDragonCard() {
       dom.cardModal.classList.add('hidden');
