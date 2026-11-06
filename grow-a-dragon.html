@@ -861,19 +861,30 @@
           <span class="text-2xl">🐉</span>
           <div class="min-w-0">
             <h3 id="galleryTitle" class="font-display font-bold text-lg sm:text-xl text-white truncate">Dragon Gallery</h3>
-            <p id="gallerySummary" class="text-xs text-slate-400">Raise a dragon all the way to Queen to add it here.</p>
+            <p id="gallerySummary" class="text-xs text-slate-400">Raise a dragon all the way to Queen to add it here. Tap a dragon to see its card.</p>
           </div>
         </div>
         <button id="closeGalleryBtn" class="shrink-0 flex items-center gap-1.5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-violet-800 transition"><span class="kbd" title="Press Esc to close">Esc</span><span>✕</span></button>
       </div>
       <div class="mt-4 overflow-y-auto pr-1">
         <div id="galleryNow"></div>
+        <!-- Blend two discovered dragons into a hybrid egg -->
+        <div id="galleryBlend" class="mb-4"></div>
         <div id="galleryGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+        <div id="galleryHybrids"></div>
       </div>
       <div class="mt-4 pt-3 border-t border-violet-800 flex items-center justify-between gap-2">
         <p class="text-[11px] text-slate-500">Saved on this computer for each Class / Period name.</p>
         <button id="clearGalleryBtn" class="text-xs px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-violet-700 font-semibold transition">Clear this class's gallery</button>
       </div>
+    </div>
+  </div>
+
+  <!-- DRAGON TRADING CARD (opens from the Gallery) -->
+  <div id="cardModal" class="fixed inset-0 z-[60] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="flex flex-col items-center gap-3 max-h-[95vh] overflow-y-auto">
+      <div id="dragonCard"></div>
+      <button id="closeCardBtn" class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-800 hover:bg-violet-750 text-slate-200 border border-violet-700 text-sm font-semibold transition"><span class="kbd" title="Press Esc to close">Esc</span><span>Close</span></button>
     </div>
   </div>
 
@@ -1091,7 +1102,7 @@
       // "interrupted" in Safari) after sleep, a speaker/projector change, or before the
       // first click; a closed one is replaced with a new one.
       initContext() {
-        if (this.ctx && this.ctx.state === 'closed') this.ctx = null;
+        if (this.ctx && this.ctx.state === 'closed') { this.ctx = null; this.unlocked = false; }
         if (!this.ctx) {
           const AudioContextClass = window.AudioContext || window.webkitAudioContext;
           if (AudioContextClass) {
@@ -1102,6 +1113,26 @@
           const r = this.ctx.resume();
           if (r && r.catch) r.catch(() => {});
         }
+      }
+
+      // Safari only allows sound after the user clicks, taps or presses a key, and wants
+      // something to actually play during that moment: a tiny silent sound "unlocks" audio.
+      // Call this from inside a click/tap/key handler.
+      unlock() {
+        // iPhone/iPad: play even when the silent switch is on (while the mic is off)
+        if (navigator.audioSession && !(micMeter && micMeter.isActive)) {
+          try { navigator.audioSession.type = 'playback'; } catch (e) {}
+        }
+        this.initContext();
+        if (!this.ctx || this.unlocked) return;
+        try {
+          const buffer = this.ctx.createBuffer(1, 1, 22050);
+          const src = this.ctx.createBufferSource();
+          src.buffer = buffer;
+          src.connect(this.ctx.destination);
+          src.start(0);
+          this.unlocked = true;
+        } catch (e) {}
       }
 
       // Playful comedic "wah-wah-wah-waaaah" brass/trombone sound for Loud Time
@@ -1441,6 +1472,8 @@
             throw new Error("Web Audio API is not supported in this browser.");
           }
 
+          // iPhone/iPad: the mic needs a recording audio session
+          if (navigator.audioSession) { try { navigator.audioSession.type = 'play-and-record'; } catch (e) {} }
           if (!this.audioCtx || this.audioCtx.state === 'closed') {
             this.audioCtx = new AudioContextClass();
           }
@@ -1493,6 +1526,7 @@
 
       stop() {
         this.isActive = false;
+        if (navigator.audioSession) { try { navigator.audioSession.type = 'playback'; } catch (e) {} }
         if (this.rafId) {
           cancelAnimationFrame(this.rafId);
           this.rafId = null;
@@ -1842,6 +1876,52 @@
       },
     };
     const SPECIES_KEYS = Object.keys(DRAGON_SPECIES);
+
+    // Trading-card details for each type: stats are Power, Calm, Speed, Magic (out of 10).
+    // adj is used to name hybrids ("Frosty Volcano Dragon").
+    const DRAGON_CARD = {
+      ice:       { adj: 'Frosty',   stats: [6, 9, 5, 8],  ability: ['Frozen Hush', 'Freezes noisy moments into silence.'], flavor: 'Lives on the highest glaciers, where the only sound is falling snow.' },
+      river:     { adj: 'Rippling', stats: [5, 8, 9, 6],  ability: ['Gentle Current', 'Washes away worries with a calm, steady flow.'], flavor: 'Follows the rivers from the mountains to the sea, humming softly.' },
+      mountain:  { adj: 'Rocky',    stats: [10, 7, 3, 5], ability: ['Steady Stone', 'Stays strong and still, no matter how loud it gets.'], flavor: 'So patient it once slept for a hundred years under a mountain.' },
+      volcano:   { adj: 'Fiery',    stats: [10, 4, 7, 7], ability: ['Lava Focus', 'Turns big energy into bright, blazing focus.'], flavor: 'Its heart burns hottest when the room is quiet.' },
+      cosmic:    { adj: 'Starry',   stats: [7, 8, 6, 10], ability: ['Starlight Dream', 'Fills the room with calm, twinkling starlight.'], flavor: 'Born from a falling star, it can count every star in the sky.' },
+      forest:    { adj: 'Leafy',    stats: [6, 10, 5, 7], ability: ['Whispering Leaves', 'Helps everything grow in peace and quiet.'], flavor: 'Old trees whisper its name when the wind is still.' },
+      lightning: { adj: 'Electric', stats: [8, 5, 10, 7], ability: ['Thunder Hold', 'Saves its thunder for when it really counts.'], flavor: 'Fast as a flash, but knows the power of a quiet moment.' },
+      desert:    { adj: 'Sandy',    stats: [7, 7, 8, 6],  ability: ['Mirage Calm', 'Stays cool and calm even under the hottest sun.'], flavor: 'Crosses the dunes at night, guided by the moon.' },
+    };
+    const STAT_NAMES = ['Power', 'Calm', 'Speed', 'Magic'];
+
+    /* ---------- Hybrids: two discovered types blended in the Gallery ----------
+       The first parent gives the body colors and the first word of the name,
+       the second gives the wings, horns and type word. Both signature features
+       show, and the Mega forms alternate between the parents. */
+    const mixRgb = (a, b) => a.split(' ').map((v, i) => Math.round((Number(v) + Number(b.split(' ')[i])) / 2)).join(' ');
+    const mixHex = (a, b) => '#' + [1, 3, 5].map(i => Math.round((parseInt(a.slice(i, i + 2), 16) + parseInt(b.slice(i, i + 2), 16)) / 2).toString(16).padStart(2, '0')).join('');
+    const hybridCache = {};
+    function hybridSpecies(a, b) {
+      const key = `${a}+${b}`;
+      if (hybridCache[key]) return hybridCache[key];
+      const A = DRAGON_SPECIES[a], B = DRAGON_SPECIES[b];
+      const short = `${DRAGON_CARD[a].adj} ${B.short}`;
+      return (hybridCache[key] = {
+        name: `${short} Dragon`, short, hybrid: true, parents: [a, b],
+        features: [A.feature, B.feature],
+        colors: { body: A.colors.body, shade: A.colors.shade, belly: mixRgb(A.colors.belly, B.colors.belly), wing: B.colors.wing, 'wing-dark': B.colors['wing-dark'], horn: B.colors.horn, cheek: A.colors.cheek, ink: A.colors.ink },
+        ramp: A.ramp.map((c, i) => mixHex(c, B.ramp[i])), bolt: B.bolt, core: A.core,
+        forms: A.forms.map((f, i) => (i % 2 ? B.forms[i] : f)),
+      });
+    }
+    const withArticle = (word) => `${/^[AEIOU]/i.test(word) ? 'an' : 'a'} ${word}`;
+    // Card details for a dragon (type or hybrid)
+    function cardInfo(entry) {
+      if (!entry.mix) return DRAGON_CARD[entry.species];
+      const A = DRAGON_CARD[entry.species], B = DRAGON_CARD[entry.mix];
+      return {
+        stats: A.stats.map((v, i) => Math.min(10, Math.round((v + B.stats[i]) / 2) + 1)),
+        ability: [`${A.ability[0]} + ${B.ability[0]}`, 'Combines the powers of both parent dragons.'],
+        flavor: `A rare blend of ${withArticle(DRAGON_SPECIES[entry.species].name)} and ${withArticle(DRAGON_SPECIES[entry.mix].name)}.`,
+      };
+    }
     const speciesStyle = (sp) => Object.entries(sp.colors).map(([k, v]) => `--dragon-${k}:${v}`).join(';');
     // Blend a #hex color toward white (t = 0..1)
     const lighten = (hex, t) => '#' + [1, 3, 5].map(i => {
@@ -1883,6 +1963,7 @@
       dragonFamily: document.getElementById('dragonFamily'),
       dragonHearts: document.getElementById('dragonHearts'),
       galleryModal: document.getElementById('galleryModal'),
+      cardModal: document.getElementById('cardModal'),
       dragonGenLabel: document.getElementById('dragonGenLabel'),
       dragonMood: document.getElementById('dragonMood'),
       dragonTrack: document.getElementById('dragonTrack'),
@@ -2366,7 +2447,7 @@
       return state.dragonLineage[gen];
     }
     const currentDragon = () => lineageAt(state.dragonFamily);
-    const speciesOf = (entry) => DRAGON_SPECIES[entry.species];
+    const speciesOf = (entry) => entry.mix ? hybridSpecies(entry.species, entry.mix) : DRAGON_SPECIES[entry.species];
     // Only Queens lay eggs, so every grown dragon is a Queen (even older saved "Kings")
     const royalName = (entry) => `${speciesOf(entry).short} Queen`;
 
@@ -2385,7 +2466,7 @@
       if (level === 0) return { name: entry.rarity && entry.rarity !== 'common' ? `${r.name} Egg` : 'Dragon Egg', short: 'Egg' };
       if (level === 1) {
         const article = /^[AEIOU]/.test(r.name) ? 'an' : 'a';
-        return { name: 'Hatching!', short: 'Hatch', title: `It's ${article} ${r.name} ${sp.name}!`, sub: `${r.icon} The ${r.name.toLowerCase()} egg is hatching!` };
+        return { name: 'Hatching!', short: 'Hatch', title: `It's ${article} ${r.name} ${sp.name}!`, sub: sp.hybrid ? `🧪 A brand-new hybrid! ${r.icon} ${r.name}` : `${r.icon} The ${r.name.toLowerCase()} egg is hatching!` };
       }
       if (level < DRAGON_MEGA_LEVEL) {
         const g = GROW_STEPS[level];
@@ -2971,7 +3052,7 @@
         const y = bcy + o * bry, w = brx * Math.sqrt(1 - o * o) * 0.85;
         parts += `<path d="M${f1(120 - w)} ${f1(y)} Q120 ${f1(y + 5)} ${f1(120 + w)} ${f1(y)}" stroke="rgb(var(--dragon-shade))" stroke-width="2.5" fill="none" opacity="0.45" stroke-linecap="round"/>`;
       });
-      parts += speciesFeature(sp.feature, geo, 'body');
+      (sp.features || [sp.feature]).forEach(f => { parts += speciesFeature(f, geo, 'body'); });
       // Star 2+: glowing veins and cracks across the skin
       if (stars >= 2) {
         [-1, 1].forEach(s => {
@@ -3026,7 +3107,7 @@
         parts += `<path class="dg-wing" d="M${f1(cx - 6)} ${f1(headTop + 6)} L${f1(cx)} ${f1(headTop - 10 - tall)} L${f1(cx + 6)} ${f1(headTop + 6)} Z"/>`;
       }
 
-      parts += speciesFeature(sp.feature, geo, 'head');
+      (sp.features || [sp.feature]).forEach(f => { parts += speciesFeature(f, geo, 'head'); });
       // Head
       parts += `<ellipse cx="124" cy="${f1(headCy)}" rx="${p.headRx}" ry="${p.headRy}" class="dg-shade"/>
         <ellipse cx="120" cy="${f1(headCy)}" rx="${p.headRx}" ry="${p.headRy}" class="dg-body"/>
@@ -3523,7 +3604,9 @@
         } else if (e.key === 'Escape') {
           // Esc closes an open menu first; with no menu open it leaves full screen
           // (in full screen this only works where the browser lets us catch Esc, see lockEscape)
-          if (openMenus().length) closeAllMenus();
+          // A card closes on its own first, back to the Gallery
+          if (!dom.cardModal.classList.contains('hidden')) closeDragonCard();
+          else if (openMenus().length) closeAllMenus();
           else if (fsElement()) toggleFullscreen();
         }
       });
@@ -3536,9 +3619,9 @@
       setupEvents();
       // Any click or key press wakes the audio, so sounds keep working after sleep
       // or a speaker/projector change
-      const wakeAudio = () => { if (sound.enabled) sound.initContext(); };
-      document.addEventListener('pointerdown', wakeAudio, true);
-      document.addEventListener('keydown', wakeAudio, true);
+      const wakeAudio = () => { if (sound.enabled) sound.unlock(); };
+      // Safari counts click/touchend/keydown as permission to play sound
+      ['pointerdown', 'click', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, wakeAudio, true));
       document.addEventListener('visibilitychange', () => { if (!document.hidden && sound.ctx) wakeAudio(); });
       setupFullscreen();
       setupGallery();
@@ -3724,23 +3807,60 @@
     function addToGallery(entry) {
       const all = loadGallery();
       const cls = galleryClass();
-      (all[cls] = all[cls] || []).push({ species: entry.species, crown: entry.crown, rarity: entry.rarity || 'common', date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) });
+      (all[cls] = all[cls] || []).push({ species: entry.species, ...(entry.mix ? { mix: entry.mix } : {}), crown: entry.crown, rarity: entry.rarity || 'common', date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) });
       saveGallery(all);
+    }
+
+    // Blend mode: pick two discovered types in the Gallery
+    const galleryBlend = { on: false, picks: [] };
+
+    // The class's dragons grouped by type (or hybrid), rarest first
+    function galleryGroups(list) {
+      const groups = {};
+      list.forEach(e => {
+        const key = e.mix ? `${e.species}+${e.mix}` : e.species;
+        if (!groups[key]) { groups[key] = []; groups[key].first = e.date; } // saved in the order raised
+        groups[key].push(e);
+      });
+      Object.values(groups).forEach(g => g.sort((x, y) => RARITY_KEYS.indexOf(x.rarity || 'common') - RARITY_KEYS.indexOf(y.rarity || 'common')));
+      return groups;
+    }
+
+    function galleryCardHtml(key, mine, growTag = '') {
+      const best = mine[0];
+      const sp = speciesOf(best);
+      const blendable = galleryBlend.on && !best.mix;
+      const pick = galleryBlend.picks.indexOf(key);
+      const ring = pick >= 0 ? 'ring-4 ring-pink-400' : '';
+      const badge = pick >= 0 ? `<span class="absolute top-2 left-2 w-7 h-7 rounded-full bg-pink-500 text-white font-bold flex items-center justify-center">${pick + 1}</span>` : '';
+      return `<button type="button" data-gallery-key="${key}" class="on-color relative rounded-2xl border-2 p-3 flex flex-col items-center text-center transition hover:-translate-y-0.5 hover:shadow-xl ${ring} ${galleryBlend.on && !blendable ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}" style="border-color: rgb(${sp.colors.body}); background: rgb(${sp.colors['wing-dark']} / 0.22)">
+        ${badge}
+        <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible">${awakeArt(DRAGON_TOP_LEVEL, best)}</svg>
+        <div class="font-display font-bold text-lg text-white mt-1 leading-tight">${sp.name}</div>
+        <div class="text-xs font-bold text-pink-300">👑 ${mine.length} Queen${mine.length === 1 ? '' : 's'}</div>
+        <div class="my-1">Rarest: ${rarityPill(rarityOf(best))}</div>
+        <div class="text-[11px] text-slate-400">First raised ${mine.first || ''}</div>
+        ${growTag}
+      </button>`;
     }
 
     function renderGallery() {
       const cls = galleryClass();
       const list = loadGallery()[cls] || [];
-      const found = SPECIES_KEYS.filter(k => list.some(e => e.species === k)).length;
+      const groups = galleryGroups(list);
+      const found = SPECIES_KEYS.filter(k => groups[k]).length;
+      const hybridKeys = Object.keys(groups).filter(k => k.includes('+'));
       document.getElementById('galleryTitle').textContent = `${cls}'s Dragon Gallery`;
       document.getElementById('gallerySummary').textContent = list.length === 0
         ? 'No dragons yet. Raise a dragon all the way to Queen to add it here!'
-        : `${found} of ${SPECIES_KEYS.length} dragon types discovered · ${list.length} dragon${list.length === 1 ? '' : 's'} raised`;
+        : `${found} of ${SPECIES_KEYS.length} dragon types discovered${hybridKeys.length ? ` · ${hybridKeys.length} hybrid${hybridKeys.length === 1 ? '' : 's'}` : ''} · ${list.length} dragon${list.length === 1 ? '' : 's'} raised · tap a dragon to see its card`;
 
       // The dragon being raised right now, at its current level
       const now = currentDragon(), nowLevel = state.dragonLevel, hatched = nowLevel > 0;
       const nowInfo = levelInfo(nowLevel, now);
       const nowSp = speciesOf(now);
+      const nextEntry = state.dragonLineage[state.dragonFamily + 1];
+      const queued = nextEntry && nextEntry.mix ? `<div class="text-xs font-bold text-pink-300 mt-1">🧪 Next egg: ${withArticle(speciesOf(nextEntry).name)} hybrid!</div>` : '';
       document.getElementById('galleryNow').innerHTML = `
         <div class="mb-4 rounded-2xl border-2 border-quiet-400 bg-quiet-500/10 p-3 flex items-center gap-4">
           <svg viewBox="-20 -40 280 290" class="w-24 sm:w-28 h-auto shrink-0 overflow-visible">${awakeArt(nowLevel, now)}</svg>
@@ -3748,16 +3868,44 @@
             <div class="text-xs font-bold uppercase tracking-widest text-quiet-300">🌱 Now raising${state.dragonFamily > 0 ? ` · Dragon #${state.dragonFamily + 1}` : ''}</div>
             <div class="font-display font-bold text-xl sm:text-2xl text-white leading-tight">${nowInfo.name}</div>
             <div class="my-1">${rarityPill(rarityOf(now))}</div>
-            <div class="text-sm text-slate-300">${hatched ? `Level ${nowLevel + 1} · keep it quiet to raise it to ${nowSp.short} Queen!` : 'A mystery egg… what kind of dragon will hatch?'}</div>
+            <div class="text-sm text-slate-300">${hatched ? `Level ${nowLevel + 1} · keep it quiet to raise it to ${nowSp.short} Queen!` : (now.mix ? 'A hybrid egg… what will it look like?' : 'A mystery egg… what kind of dragon will hatch?')}</div>
+            ${queued}
           </div>
         </div>`;
 
+      // Blend bar
+      const canBlend = found >= 2;
+      let blend;
+      if (!galleryBlend.on) {
+        blend = `<div class="flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-dashed border-pink-500/50 bg-pink-500/5 px-4 py-3">
+          <div class="text-sm text-slate-300"><span class="font-bold text-pink-300">🧪 Dragon Lab:</span> blend two discovered dragons to make a hybrid egg!</div>
+          <button type="button" id="blendStartBtn" class="px-4 py-2 rounded-xl text-sm font-bold transition ${canBlend ? 'bg-pink-500 hover:bg-pink-400 text-white' : 'bg-violet-800 text-slate-500 cursor-not-allowed'}" ${canBlend ? '' : 'disabled title="Discover 2 dragon types first"'}>🧪 Blend</button>
+        </div>`;
+      } else {
+        const [a, b] = galleryBlend.picks;
+        const preview = a && b ? { species: a, mix: b, crown: 'Queen' } : null;
+        blend = `<div class="flex flex-wrap items-center gap-4 rounded-2xl border-2 border-pink-400 bg-pink-500/10 px-4 py-3">
+          ${preview ? `<svg viewBox="-20 -40 280 290" class="w-20 h-auto overflow-visible">${awakeArt(4, preview)}</svg>` : '<div class="w-20 h-20 rounded-xl border-2 border-dashed border-pink-400/60 flex items-center justify-center text-3xl">🧪</div>'}
+          <div class="flex-1 min-w-[12rem]">
+            <div class="font-bold text-pink-300">🧪 Dragon Lab</div>
+            <div class="text-sm text-slate-200">${preview ? `Blend into a <b>${speciesOf(preview).name}</b>!` : a ? `Now pick a second dragon to blend with the ${DRAGON_SPECIES[a].name}.` : 'Pick the first dragon (gives the body), then the second (gives the wings and powers).'}</div>
+          </div>
+          <div class="flex gap-2">
+            <button type="button" id="blendGoBtn" class="px-4 py-2 rounded-xl text-sm font-bold transition ${preview ? 'bg-pink-500 hover:bg-pink-400 text-white' : 'bg-violet-800 text-slate-500 cursor-not-allowed'}" ${preview ? '' : 'disabled'}>Blend!</button>
+            <button type="button" id="blendCancelBtn" class="px-4 py-2 rounded-xl text-sm font-semibold bg-violet-800 hover:bg-violet-750 text-slate-300 border border-violet-700">Cancel</button>
+          </div>
+        </div>`;
+      }
+      document.getElementById('galleryBlend').innerHTML = blend;
+
+      // Dragon types
       document.getElementById('galleryGrid').innerHTML = SPECIES_KEYS.map(key => {
         const sp = DRAGON_SPECIES[key];
-        const mine = list.filter(e => e.species === key);
-        const growing = hatched && now.species === key;
+        const mine = groups[key];
+        const growing = hatched && now.species === key && !now.mix;
         const growTag = growing ? `<div class="mt-1 text-[11px] font-bold text-quiet-200">🌱 Growing now: ${nowInfo.name}</div>` : '';
-        if (mine.length === 0 && growing) {
+        if (mine) return galleryCardHtml(key, mine, growTag);
+        if (growing) {
           // Not discovered yet, but the class is raising one right now: show its current form
           return `<div class="on-color rounded-2xl border-2 border-dashed p-3 flex flex-col items-center text-center" style="border-color: rgb(${sp.colors.body}); background: rgb(${sp.colors['wing-dark']} / 0.15)">
             <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible">${awakeArt(nowLevel, now)}</svg>
@@ -3766,26 +3914,116 @@
             ${growTag}
           </div>`;
         }
-        if (mine.length === 0) {
-          // Not discovered yet: a dark silhouette keeps it a mystery
-          return `<div class="rounded-2xl border-2 border-dashed border-violet-700 bg-violet-950/60 p-3 flex flex-col items-center text-center">
-            <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible" style="filter: brightness(0); opacity: 0.35">${awakeArt(DRAGON_TOP_LEVEL, { species: key, crown: 'Queen' })}</svg>
-            <div class="font-display font-bold text-lg text-slate-500 mt-1">???</div>
-            <div class="text-[11px] text-slate-500">Not discovered yet</div>
-          </div>`;
-        }
-        const latest = mine[mine.length - 1];
-        const best = mine.reduce((a, e) => RARITY_KEYS.indexOf(e.rarity || 'common') < RARITY_KEYS.indexOf(a.rarity || 'common') ? e : a);
-        const crowns = `👑 ${mine.length} Queen${mine.length === 1 ? '' : 's'}`;
-        return `<div class="on-color rounded-2xl border-2 p-3 flex flex-col items-center text-center" style="border-color: rgb(${sp.colors.body}); background: rgb(${sp.colors['wing-dark']} / 0.22)">
-          <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible">${awakeArt(DRAGON_TOP_LEVEL, latest)}</svg>
-          <div class="font-display font-bold text-lg text-white mt-1">${sp.name}</div>
-          <div class="text-xs font-bold text-pink-300">${crowns}</div>
-          <div class="my-1">Rarest: ${rarityPill(rarityOf(best))}</div>
-          <div class="text-[11px] text-slate-400">First raised ${mine[0].date}</div>
-          ${growTag}
+        // Not discovered yet: a dark silhouette keeps it a mystery
+        return `<div class="rounded-2xl border-2 border-dashed border-violet-700 bg-violet-950/60 p-3 flex flex-col items-center text-center ${galleryBlend.on ? 'opacity-40' : ''}">
+          <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible" style="filter: brightness(0); opacity: 0.35">${awakeArt(DRAGON_TOP_LEVEL, { species: key, crown: 'Queen' })}</svg>
+          <div class="font-display font-bold text-lg text-slate-500 mt-1">???</div>
+          <div class="text-[11px] text-slate-500">Not discovered yet</div>
         </div>`;
       }).join('');
+
+      // Hybrids the class has raised
+      document.getElementById('galleryHybrids').innerHTML = hybridKeys.length ? `
+        <h4 class="mt-6 mb-3 font-display font-bold text-lg text-pink-300">🧪 Hybrids</h4>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">${hybridKeys.map(k => galleryCardHtml(k, groups[k])).join('')}</div>` : '';
+
+      bindGalleryControls(groups);
+    }
+
+    function bindGalleryControls(groups) {
+      document.querySelectorAll('[data-gallery-key]').forEach(btn => btn.addEventListener('click', () => {
+        const key = btn.dataset.galleryKey;
+        if (galleryBlend.on) {
+          if (key.includes('+')) return; // hybrids can't be blended again
+          const i = galleryBlend.picks.indexOf(key);
+          if (i >= 0) galleryBlend.picks.splice(i, 1);
+          else if (galleryBlend.picks.length < 2) galleryBlend.picks.push(key);
+          else galleryBlend.picks[1] = key;
+          renderGallery();
+        } else {
+          openDragonCard(key, groups[key]);
+        }
+      }));
+      const start = document.getElementById('blendStartBtn');
+      if (start) start.addEventListener('click', () => { galleryBlend.on = true; galleryBlend.picks = []; renderGallery(); });
+      const cancel = document.getElementById('blendCancelBtn');
+      if (cancel) cancel.addEventListener('click', () => { galleryBlend.on = false; galleryBlend.picks = []; renderGallery(); });
+      const go = document.getElementById('blendGoBtn');
+      if (go) go.addEventListener('click', () => {
+        const [a, b] = galleryBlend.picks;
+        if (!a || !b) return;
+        galleryBlend.on = false; galleryBlend.picks = [];
+        blendDragons(a, b);
+        renderGallery();
+      });
+    }
+
+    // Make a hybrid egg: the current egg if it hasn't hatched yet, otherwise the next egg
+    function blendDragons(a, b) {
+      const entry = { species: a, mix: b, crown: 'Queen', rarity: rollRarity() };
+      const name = speciesOf(entry).name;
+      // (messages below read "a/an <name>")
+      if (state.dragonLevel === 0 && !state.dragonHiding) {
+        state.dragonLineage[state.dragonFamily] = entry;
+        renderDragon();
+        replayAnimation(dom.dragonWrap, 'dg-evolve', 1200);
+        addMilestone('quiet', '🧪', `Blended ${withArticle(name)} egg!`);
+        showToast('quiet', '🧪', 'A hybrid egg!', `The egg is now a ${name}. Keep it quiet so it can hatch!`);
+      } else {
+        lineageAt(state.dragonFamily + 1);
+        state.dragonLineage[state.dragonFamily + 1] = entry;
+        addMilestone('quiet', '🧪', `Blended ${withArticle(name)} egg. It will be the next egg!`);
+        showToast('quiet', '🧪', 'A hybrid egg is on the way!', `The next egg will be ${withArticle(name)}.`);
+      }
+      sound.playQuietMilestone();
+    }
+
+    // Trading card for a type (or hybrid) the class has raised
+    function openDragonCard(key, mine) {
+      if (!mine || !mine.length) return;
+      const best = mine[0];
+      const sp = speciesOf(best), info = cardInfo(best), r = rarityOf(best);
+      const rank = RARITY_KEYS.length - 1 - RARITY_KEYS.indexOf(best.rarity || 'common'); // 0 common … 5 legendary
+      const stats = info.stats.map(v => Math.min(10, v + Math.round(rank * 0.5)));
+      const number = best.mix ? 'Hybrid' : `#${String(SPECIES_KEYS.indexOf(best.species) + 1).padStart(2, '0')} / ${String(SPECIES_KEYS.length).padStart(2, '0')}`;
+      const c = sp.colors;
+      const bar = (v) => `<div class="flex gap-0.5">${Array.from({ length: 10 }, (_, i) => `<span class="h-2.5 flex-1 rounded-sm" style="background:${i < v ? `rgb(${c.horn})` : 'rgb(255 255 255 / 0.15)'}"></span>`).join('')}</div>`;
+      const first = mine.first || '';
+      document.getElementById('dragonCard').innerHTML = `
+        <div class="on-color w-[min(88vw,22rem)] rounded-[1.75rem] p-2.5 shadow-2xl" style="background: linear-gradient(145deg, rgb(${c.body}), rgb(${c.wing}) 55%, ${r.color})">
+          <div class="rounded-[1.35rem] p-3 flex flex-col gap-2" style="background: linear-gradient(180deg, rgb(${c['wing-dark']}), rgb(${c.ink}))">
+            <div class="flex items-center justify-between gap-2">
+              <div class="font-display font-bold text-xl text-white leading-tight">${royalName(best)}</div>
+              <div class="shrink-0 text-sm font-bold text-white/90">👑 Lv ${DRAGON_TOP_LEVEL + 1}</div>
+            </div>
+            <div class="relative rounded-xl overflow-hidden border-4 aspect-[4/3]" style="border-color: rgb(${c.horn} / 0.8)">
+              ${sceneArt(best.species)}
+              <svg viewBox="-25 -50 290 300" class="absolute inset-0 w-full h-full overflow-visible">${awakeArt(DRAGON_TOP_LEVEL, best)}</svg>
+            </div>
+            <div class="flex items-center justify-between text-[11px] font-semibold text-white/80">
+              <span>${sp.name}${best.mix ? ` · 🧪 ${DRAGON_SPECIES[best.species].short} + ${DRAGON_SPECIES[best.mix].short}` : ''}</span>
+              ${rarityPill(r)}
+            </div>
+            <div class="rounded-xl bg-black/30 px-3 py-2">
+              <div class="font-bold text-sm" style="color: rgb(${c.horn})">✨ ${info.ability[0]}</div>
+              <div class="text-xs text-white/85">${info.ability[1]}</div>
+            </div>
+            <div class="rounded-xl bg-black/30 px-3 py-2 grid grid-cols-[4.2rem_1fr_1.4rem] items-center gap-x-2 gap-y-1.5">
+              ${STAT_NAMES.map((n, i) => `<span class="text-xs font-bold text-white/85">${n}</span>${bar(stats[i])}<span class="text-xs font-bold text-white text-right">${stats[i]}</span>`).join('')}
+            </div>
+            <div class="text-[11px] italic text-white/75 px-1">“${info.flavor}”</div>
+            <div class="flex items-center justify-between text-[10px] font-semibold text-white/60 border-t border-white/15 pt-1.5">
+              <span>Raised by ${escapeHtml(galleryClass())} · ×${mine.length}${first ? ` · since ${first}` : ''}</span>
+              <span>${number}</span>
+            </div>
+          </div>
+        </div>`;
+      dom.cardModal.classList.remove('hidden');
+      dom.cardModal.classList.add('flex');
+    }
+    function closeDragonCard() {
+      dom.cardModal.classList.add('hidden');
+      dom.cardModal.classList.remove('flex');
     }
 
     function openGallery() {
@@ -3794,12 +4032,14 @@
       dom.galleryModal.classList.add('flex');
     }
     function closeGallery() {
+      galleryBlend.on = false; galleryBlend.picks = [];
       dom.galleryModal.classList.add('hidden');
       dom.galleryModal.classList.remove('flex');
     }
     function setupGallery() {
       document.getElementById('galleryBtn').addEventListener('click', openGallery);
       document.getElementById('closeGalleryBtn').addEventListener('click', closeGallery);
+      document.getElementById('closeCardBtn').addEventListener('click', closeDragonCard);
       dom.galleryModal.addEventListener('click', (e) => { if (e.target === dom.galleryModal) closeGallery(); });
       document.getElementById('clearGalleryBtn').addEventListener('click', () => {
         const cls = galleryClass();
@@ -3821,7 +4061,7 @@
     const FS_EXIT_ICON = '<path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>';
 
     // All pop-up menus (modals)
-    const MENU_IDS = ['galleryModal', 'settingsModal', 'logsModal', 'calibrateModal', 'timeExpiredModal'];
+    const MENU_IDS = ['cardModal', 'galleryModal', 'settingsModal', 'logsModal', 'calibrateModal', 'timeExpiredModal'];
     const openMenus = () => MENU_IDS.map(id => document.getElementById(id)).filter(el => el && !el.classList.contains('hidden'));
     function closeAllMenus() {
       openMenus().forEach(el => { el.classList.add('hidden'); el.classList.remove('flex'); });
