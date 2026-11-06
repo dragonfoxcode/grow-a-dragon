@@ -9,3 +9,7 @@ will be helpful for you!
 Enjoy,
 
 ~Grow a Dragon
+
+---
+
+© 2026 Grow a Dragon. All rights reserved. See [LICENSE](LICENSE) for details.
