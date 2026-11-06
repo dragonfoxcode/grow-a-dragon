@@ -438,6 +438,12 @@
         <span class="hidden sm:inline">Gallery</span>
       </button>
 
+      <!-- Leaderboard: how the classes compare -->
+      <button id="leaderboardBtn" title="Class Leaderboard" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-750 text-amber-300 border border-violet-700 transition">
+        <span>🏆</span>
+        <span class="hidden sm:inline">Leaderboard</span>
+      </button>
+
       <!-- Full screen toggle (hidden if the browser can't do full screen) -->
       <button id="fullscreenBtn" title="Full screen (F)" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-750 text-slate-200 border border-violet-700 transition">
         <svg id="fullscreenIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
@@ -484,8 +490,9 @@
   <!-- Class Name Bar -->
   <div class="w-full max-w-4xl mx-auto px-4 pt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
     <div class="flex items-center gap-2 w-full sm:w-auto">
+      <datalist id="classNameList"></datalist>
       <label for="classNameInput" class="text-xs uppercase font-bold tracking-wider text-pink-300 whitespace-nowrap">Class / Period:</label>
-      <input type="text" id="classNameInput" placeholder="e.g. 5th Grade Science, Period 3" value="Room 101" class="bg-violet-900 border border-violet-700/80 rounded-xl px-3 py-1.5 text-sm text-white font-semibold focus:outline-none focus:border-cyan-400 w-full sm:w-64 placeholder-violet-500 shadow-inner">
+      <input type="text" id="classNameInput" list="classNameList" autocomplete="off" title="Each class has its own dragon and gallery. Type a new name to add a class." placeholder="e.g. 5th Grade Science, Period 3" value="Room 101" class="bg-violet-900 border border-violet-700/80 rounded-xl px-3 py-1.5 text-sm text-white font-semibold focus:outline-none focus:border-cyan-400 w-full sm:w-64 placeholder-violet-500 shadow-inner">
     </div>
 
     <!-- Save Class Session to Log Button -->
@@ -880,6 +887,24 @@
     </div>
   </div>
 
+  <!-- CLASS LEADERBOARD -->
+  <div id="leaderboardModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-violet-900 border border-violet-700 rounded-3xl w-full max-w-3xl p-6 shadow-2xl relative max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between gap-3 pb-4 border-b border-violet-800">
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">🏆</span>
+          <div>
+            <h3 class="font-display font-bold text-lg sm:text-xl text-white">Class Leaderboard</h3>
+            <p class="text-xs text-slate-400">How every class on this computer is doing</p>
+          </div>
+        </div>
+        <button id="closeLeaderboardBtn" class="shrink-0 flex items-center gap-1.5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-violet-800 transition"><span class="kbd" title="Press Esc to close">Esc</span><span>✕</span></button>
+      </div>
+      <div id="leaderboardTabs" class="mt-4 grid grid-cols-3 gap-2"></div>
+      <div id="leaderboardList" class="mt-4 flex flex-col gap-2 overflow-y-auto pr-1"></div>
+    </div>
+  </div>
+
   <!-- DRAGON TRADING CARD (opens from the Gallery) -->
   <div id="cardModal" class="fixed inset-0 z-[60] bg-black/85 backdrop-blur-md hidden items-center justify-center p-4">
     <div class="flex flex-col items-center gap-3 max-h-[95vh] overflow-y-auto">
@@ -995,6 +1020,7 @@
           </div>
           <div class="flex items-center justify-between gap-2 pt-1">
             <p id="dragonRulesSummary" class="text-[11px] text-slate-400"></p>
+            <button id="restartDragonBtn" type="button" class="shrink-0 text-[11px] px-2.5 py-1 rounded-lg bg-violet-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-violet-700 font-semibold" title="Starts this class's dragon over as a new egg. The Gallery is kept.">🥚 Start this class's dragon over</button>
             <button id="dragonDefaultsBtn" type="button" class="shrink-0 text-[11px] px-2.5 py-1 rounded-lg bg-violet-800 hover:bg-violet-750 text-slate-300 border border-violet-700 font-semibold">Reset to defaults</button>
           </div>
         </div>
@@ -1682,6 +1708,9 @@
       dragonLevel: 0,
       dragonBest: 0,
       dragonFamily: 0,    // grown dragons that reached the final form and laid an egg
+      currentClass: '',   // the Class / Period whose dragon is on stage
+      classTotals: { quietMs: 0, loudMs: 0 }, // this class's all-time Quiet/Loud time
+      dragonBaseline: null, // the class's dragon when this session began (for recalculation)
       dragonLineage: [],  // every dragon this session in order: { species, crown, rarity }; the current one is [dragonFamily]
       speciesBag: [],     // dragon types not used yet in this round
       milestones: [], // { side, icon, label, clock } newest first
@@ -1985,6 +2014,7 @@
       dragonFamily: document.getElementById('dragonFamily'),
       dragonHearts: document.getElementById('dragonHearts'),
       galleryModal: document.getElementById('galleryModal'),
+      leaderboardModal: document.getElementById('leaderboardModal'),
       cardModal: document.getElementById('cardModal'),
       dragonGenLabel: document.getElementById('dragonGenLabel'),
       dragonMood: document.getElementById('dragonMood'),
@@ -2141,8 +2171,10 @@
           if (last && last[0] === state.activeTimer) last[1] += delta;
           else state.dragonHistory.push([state.activeTimer, delta]);
 
-          if (state.activeTimer === 'loud') state.loudElapsedMs += delta;
-          else if (state.activeTimer === 'quiet') state.quietElapsedMs += delta;
+          if (state.activeTimer === 'loud') { state.loudElapsedMs += delta; state.classTotals.loudMs += delta; }
+          else if (state.activeTimer === 'quiet') { state.quietElapsedMs += delta; state.classTotals.quietMs += delta; }
+          // Save this class's dragon every few seconds while the timer runs
+          if (now - lastClassSave > 5000) { lastClassSave = now; saveCurrentClass(); }
           const dragonEvent = stepDragon(state, state.activeTimer, delta);
           if (dragonEvent === 'hide') dragonRanOff();
           else if (dragonEvent === 'return') dragonCameBack();
@@ -2237,7 +2269,9 @@
       updateDisplay();
     }
 
-    function resetAllTimers() {
+    // Reset the clocks and this session's timeline. The class's dragon is kept
+    // (it's saved per class); use "Start this class's dragon over" in Settings for that.
+    function resetAllTimers(quiet = false) {
       state.activeTimer = null;
       state.loudElapsedMs = 0;
       state.quietElapsedMs = 0;
@@ -2247,17 +2281,10 @@
       state.secondTracker = 0;
       state.lastActiveSide = 'loud';
 
-      state.dragonProgress = 0;
-      state.dragonGraceMs = 0;
+      // The dragon carries on from here; recalculation replays from this point
       state.dragonHistory = [];
-      state.dragonHearts = dragonSettings.hearts;
-      state.dragonHiding = false;
-      state.dragonCoaxMs = 0;
-      state.dragonLevel = 0;
-      state.dragonBest = 0;
-      state.dragonFamily = 0;
-      state.dragonLineage = [];
-      state.speciesBag = [];
+      state.dragonGraceMs = 0;
+      state.dragonBaseline = snapshotDragon();
       state.milestones = [];
       renderMilestones();
       renderDragon();
@@ -2266,9 +2293,10 @@
       dom.quietTurnsCount.textContent = '0';
       dom.totalSwitchesDisplay.textContent = '0';
 
-      sound.playResetSound();
+      if (!quiet) sound.playResetSound();
       applyVisualState();
       updateDisplay();
+      saveCurrentClass();
     }
 
     function swapTurn() {
@@ -3657,8 +3685,17 @@
       renderMilestones();
       renderDragonSettings();
       renderSilencePicker();
-      state.dragonHearts = dragonSettings.hearts;
-      renderDragon();
+      // Open the class used last time, with its own dragon
+      let lastClass = '';
+      try { lastClass = localStorage.getItem('quietloud-last-class') || ''; } catch (e) {}
+      loadClass(lastClass || dom.classNameInput.value.trim() || 'Untitled Class');
+      dom.classNameInput.addEventListener('change', () => switchClass(dom.classNameInput.value));
+      dom.classNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') dom.classNameInput.blur(); });
+      document.getElementById('restartDragonBtn').addEventListener('click', restartClassDragon);
+      document.getElementById('leaderboardBtn').addEventListener('click', openLeaderboard);
+      document.getElementById('closeLeaderboardBtn').addEventListener('click', closeLeaderboard);
+      window.addEventListener('pagehide', saveCurrentClass);
+      document.addEventListener('visibilitychange', () => { if (document.hidden) saveCurrentClass(); });
       setTheme(document.documentElement.dataset.theme || 'galaxy', false);
       setAppearance(document.documentElement.dataset.appearance || 'auto', false);
       document.querySelectorAll('.appearance-btn').forEach(btn => {
@@ -3812,10 +3849,146 @@
     }
 
     /* ==========================================================================
+       CLASSES: each Class / Period has its own dragon, saved on this computer
+       ========================================================================== */
+    const CLASSES_KEY = 'quietloud-classes';
+    const DRAGON_FIELDS = ['dragonProgress', 'dragonLevel', 'dragonBest', 'dragonFamily', 'dragonLineage', 'speciesBag', 'dragonHearts', 'dragonHiding', 'dragonCoaxMs'];
+    let lastClassSave = 0;
+
+    function loadClasses() {
+      try {
+        const all = JSON.parse(localStorage.getItem(CLASSES_KEY) || '{}');
+        return all && typeof all === 'object' ? all : {};
+      } catch (e) { return {}; }
+    }
+    function saveClasses(all) {
+      try { localStorage.setItem(CLASSES_KEY, JSON.stringify(all)); } catch (e) {}
+    }
+    const freshDragon = () => ({ dragonProgress: 0, dragonLevel: 0, dragonBest: 0, dragonFamily: 0, dragonLineage: [], speciesBag: [], dragonHearts: dragonSettings.hearts, dragonHiding: false, dragonCoaxMs: 0 });
+    function snapshotDragon() {
+      const snap = {};
+      DRAGON_FIELDS.forEach(k => { snap[k] = state[k]; });
+      return JSON.parse(JSON.stringify(snap));
+    }
+    function saveCurrentClass() {
+      if (!state.currentClass) return;
+      lineageAt(state.dragonFamily); // make sure the current dragon is decided before saving
+      const all = loadClasses();
+      all[state.currentClass] = { dragon: snapshotDragon(), totals: state.classTotals, updated: Date.now() };
+      saveClasses(all);
+      try { localStorage.setItem('quietloud-last-class', state.currentClass); } catch (e) {}
+    }
+    // Load a class's dragon (a new class starts with a fresh egg)
+    function loadClass(name) {
+      const saved = loadClasses()[name];
+      state.currentClass = name;
+      Object.assign(state, freshDragon(), saved ? JSON.parse(JSON.stringify(saved.dragon)) : {});
+      state.dragonHearts = Math.min(state.dragonHearts, dragonSettings.hearts);
+      state.classTotals = saved && saved.totals ? { ...saved.totals } : { quietMs: 0, loudMs: 0 };
+      state.dragonHistory = [];
+      state.dragonGraceMs = 0;
+      state.dragonBaseline = snapshotDragon();
+      dom.classNameInput.value = name;
+      renderDragon();
+      updateDragonMood();
+      renderClassList();
+    }
+    // Switching classes: save this one, start fresh clocks, load the other class's dragon
+    function switchClass(name) {
+      name = name.trim() || 'Untitled Class';
+      if (name === state.currentClass) { dom.classNameInput.value = name; return; }
+      const isNew = !loadClasses()[name];
+      saveCurrentClass();
+      state.activeTimer = null;
+      loadClass(name);
+      resetAllTimers(true);
+      const now = levelInfo(state.dragonLevel, currentDragon()).name;
+      showToast('quiet', miniDragon(state.dragonLevel, currentDragon()), isNew ? `Welcome, ${escapeHtml(name)}!` : `Switched to ${escapeHtml(name)}`,
+        isNew ? 'A brand-new egg is waiting for your class.' : `Your dragon: ${now}`);
+      saveCurrentClass();
+    }
+    function restartClassDragon() {
+      if (!confirm(`Start ${state.currentClass}'s dragon over as a new egg? Its Gallery is kept.`)) return;
+      Object.assign(state, freshDragon());
+      resetAllTimers(true);
+      addMilestone('quiet', '🥚', 'A brand-new egg for this class!');
+    }
+    // Class names for the suggestions list (saved dragons and galleries)
+    function allClassNames() {
+      return [...new Set([...Object.keys(loadClasses()), ...Object.keys(loadGallery())])].sort((a, b) => a.localeCompare(b));
+    }
+    function renderClassList() {
+      document.getElementById('classNameList').innerHTML = allClassNames().map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+    }
+
+    /* ==========================================================================
+       CLASS LEADERBOARD
+       ========================================================================== */
+    const LEADERBOARD_TABS = {
+      queens: { label: '👑 Most Queens', value: r => r.queens, show: r => `${r.queens} Queen${r.queens === 1 ? '' : 's'}` },
+      types:  { label: '🐉 Most types',  value: r => r.types, show: r => `${r.types} of ${SPECIES_KEYS.length} types` },
+      calm:   { label: '🤫 Calmest',     value: r => r.calm === null ? -1 : r.calm, show: r => r.calm === null ? 'Not enough time yet' : `${r.calm.toFixed(0)}% quiet` },
+    };
+    let leaderboardTab = 'queens';
+
+    function classRows() {
+      saveCurrentClass();
+      const classes = loadClasses(), gallery = loadGallery();
+      return allClassNames().map(name => {
+        const list = gallery[name] || [];
+        const saved = classes[name];
+        const totals = saved && saved.totals ? saved.totals : { quietMs: 0, loudMs: 0 };
+        const total = totals.quietMs + totals.loudMs;
+        const d = saved ? saved.dragon : null;
+        const entry = d && d.dragonLineage && d.dragonLineage[d.dragonFamily];
+        return {
+          name, queens: list.length,
+          types: new Set(list.filter(e => !e.mix).map(e => e.species)).size,
+          hybrids: new Set(list.filter(e => e.mix).map(dragonKey)).size,
+          calm: total >= 60000 ? (totals.quietMs / total) * 100 : null, // needs a minute of data
+          level: d ? d.dragonLevel : 0, entry,
+        };
+      });
+    }
+
+    function renderLeaderboard() {
+      document.getElementById('leaderboardTabs').innerHTML = Object.entries(LEADERBOARD_TABS).map(([key, t]) =>
+        `<button type="button" data-lb-tab="${key}" class="py-2 rounded-xl border-2 text-sm font-bold transition ${key === leaderboardTab ? 'bg-amber-400/20 text-amber-200 border-amber-400' : 'bg-violet-800 text-slate-300 border-violet-700 hover:bg-violet-750'}">${t.label}</button>`).join('');
+      const tab = LEADERBOARD_TABS[leaderboardTab];
+      const rows = classRows().sort((a, b) => tab.value(b) - tab.value(a) || b.queens - a.queens || b.level - a.level || a.name.localeCompare(b.name));
+      const medals = ['🥇', '🥈', '🥉'];
+      document.getElementById('leaderboardList').innerHTML = rows.length === 0
+        ? '<p class="text-slate-500 italic">No classes yet.</p>'
+        : rows.map((r, i) => {
+          const me = r.name === state.currentClass;
+          const dragonName = r.entry ? levelInfo(r.level, r.entry).name : 'Dragon Egg';
+          return `<div class="flex items-center gap-3 rounded-2xl border-2 px-3 py-2 ${me ? 'border-quiet-400 bg-quiet-500/10' : 'border-violet-700 bg-violet-950/50'}">
+            <div class="w-9 text-center font-display font-bold text-2xl ${i < 3 ? '' : 'text-slate-400 text-lg'}">${i < 3 ? medals[i] : i + 1}</div>
+            <svg viewBox="${r.level >= 2 ? '-10 -20 260 260' : '40 70 160 160'}" class="w-16 h-16 shrink-0 overflow-visible">${r.entry ? awakeArt(r.level, r.entry) : awakeArt(0, { species: 'volcano' })}</svg>
+            <div class="flex-1 min-w-0">
+              <div class="font-display font-bold text-white truncate">${escapeHtml(r.name)}${me ? ' <span class="text-xs text-quiet-300">(on stage)</span>' : ''}</div>
+              <div class="text-[11px] text-slate-400 truncate">Now raising: ${dragonName} · 👑 ${r.queens} · 🐉 ${r.types}/${SPECIES_KEYS.length} · 🧪 ${r.hybrids}</div>
+            </div>
+            <div class="shrink-0 text-right font-bold text-amber-200 text-sm">${tab.show(r)}</div>
+          </div>`;
+        }).join('');
+      document.querySelectorAll('[data-lb-tab]').forEach(btn => btn.addEventListener('click', () => { leaderboardTab = btn.dataset.lbTab; renderLeaderboard(); }));
+    }
+    function openLeaderboard() {
+      renderLeaderboard();
+      dom.leaderboardModal.classList.remove('hidden');
+      dom.leaderboardModal.classList.add('flex');
+    }
+    function closeLeaderboard() {
+      dom.leaderboardModal.classList.add('hidden');
+      dom.leaderboardModal.classList.remove('flex');
+    }
+
+    /* ==========================================================================
        DRAGON GALLERY (per class name, saved in this browser)
        ========================================================================== */
     const GALLERY_KEY = 'quietloud-gallery';
-    const galleryClass = () => dom.classNameInput.value.trim() || 'Untitled Class';
+    const galleryClass = () => state.currentClass;
     function loadGallery() {
       try {
         const all = JSON.parse(localStorage.getItem(GALLERY_KEY) || '{}');
@@ -4000,6 +4173,7 @@
         showToast('quiet', '🧪', 'A hybrid egg is on the way!', `The next egg will be ${withArticle(name)}.`);
       }
       sound.playQuietMilestone();
+      saveCurrentClass();
     }
 
     // Trading card for a type (or hybrid) the class has raised
@@ -4092,7 +4266,7 @@
     const FS_EXIT_ICON = '<path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>';
 
     // All pop-up menus (modals)
-    const MENU_IDS = ['cardModal', 'galleryModal', 'settingsModal', 'logsModal', 'calibrateModal', 'timeExpiredModal'];
+    const MENU_IDS = ['cardModal', 'leaderboardModal', 'galleryModal', 'settingsModal', 'logsModal', 'calibrateModal', 'timeExpiredModal'];
     const openMenus = () => MENU_IDS.map(id => document.getElementById(id)).filter(el => el && !el.classList.contains('hidden'));
     function closeAllMenus() {
       openMenus().forEach(el => { el.classList.add('hidden'); el.classList.remove('flex'); });
@@ -4178,7 +4352,8 @@
     // hearts, hiding, growth, egg laying, and the grace period after level-ups.
     function recalculateDragon() {
       const graceMs = dragonSettings.graceSec * 1000;
-      const d = { dragonProgress: 0, dragonHearts: dragonSettings.hearts, dragonHiding: false, dragonCoaxMs: 0, dragonGraceMs: 0 };
+      const base = state.dragonBaseline || snapshotDragon();
+      const d = { dragonProgress: base.dragonProgress, dragonHearts: Math.min(base.dragonHearts, dragonSettings.hearts), dragonHiding: base.dragonHiding, dragonCoaxMs: base.dragonCoaxMs, dragonGraceMs: 0 };
       if (state.dragonHistory.length === 0) {
         state.dragonHearts = Math.min(state.dragonHearts, dragonSettings.hearts);
         if (!state.dragonHiding) state.dragonHearts = dragonSettings.hearts;
@@ -4186,7 +4361,7 @@
         return;
       }
       const STEP = 100;
-      let level = 0, best = 0, family = 0;
+      let level = base.dragonLevel, best = base.dragonBest, family = base.dragonFamily;
       state.dragonHistory.forEach(([side, ms]) => {
         for (let left = ms; left > 0; left -= STEP) {
           stepDragon(d, side, Math.min(STEP, left));
@@ -4210,6 +4385,7 @@
       updateDragonMood();
       const who = family > 0 ? `dragon #${family + 1} is now` : 'dragon is now';
       addMilestone('quiet', '🔄', `Dragon settings changed: ${who} ${levelName(level)}${state.dragonHiding ? ' (hiding)' : ''}`);
+      saveCurrentClass();
     }
 
     function renderSilencePicker() {
