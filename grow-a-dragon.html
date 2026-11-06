@@ -2856,6 +2856,7 @@
         const eye = (x) => `<ellipse cx="${x}" cy="104" rx="7" ry="8.5" fill="white"/><circle cx="${x + 1.5}" cy="106" r="4.6" class="dg-ink"/><circle cx="${x - 1}" cy="102.5" r="1.6" fill="white"/>`;
         peek = `<path class="dg-horn" d="M98 92 l4 -14 l7 12 Z"/><path class="dg-horn" d="M136 92 l-4 -14 l-7 12 Z"/>
           <ellipse cx="118" cy="112" rx="32" ry="24" class="dg-body"/>
+          ${level >= DRAGON_TOP_LEVEL ? queenCrown(118, 92, 34) : ''}
           <g class="dg-eyes">${eye(106)}${eye(130)}</g>
           <path d="M97 98 L112 92 M139 98 L124 92" class="dg-line" stroke-width="2.6"/>`;
         peek += `<g class="dg-tail"><path d="M200 214 C222 212 232 200 230 184" class="dg-tail-stroke" stroke-width="12"/>
@@ -2868,7 +2869,7 @@
     // Wrapped in the dragon type's colors so it looks right anywhere (stage, pop-ups, family, gallery)
     const dragonArtFor = (level, entry = currentDragon()) => {
       const sp = speciesOf(entry);
-      return `<g style="${speciesStyle(sp)}">${dragonArt(Math.min(level, DRAGON_MEGA_LEVEL), artStars(level), sp)}</g>`;
+      return `<g style="${speciesStyle(sp)}">${dragonArt(Math.min(level, DRAGON_MEGA_LEVEL), artStars(level), sp, level >= DRAGON_TOP_LEVEL)}</g>`;
     };
 
     // Small copies (pop-ups, family) never sleep, so leave out the "Zzz"
@@ -3001,7 +3002,25 @@
       return '';
     }
 
-    function dragonArt(level, stars = 0, sp = DRAGON_SPECIES.volcano) {
+    // A gold crown with jewels, centered at (cx, base) with the given width
+    function queenCrown(cx, base, w) {
+      const h = w * 0.55, l = cx - w / 2, r = cx + w / 2;
+      const pts = [[l, base], [l, base - h * 0.75], [l + w * 0.2, base - h * 0.35], [cx - w * 0.15, base - h], [cx, base - h * 0.45],
+        [cx + w * 0.15, base - h], [r - w * 0.2, base - h * 0.35], [r, base - h * 0.75], [r, base]];
+      const d = 'M' + pts.map(([x, y]) => `${f1(x)} ${f1(y)}`).join(' L') + ' Z';
+      const tips = [[l, base - h * 0.75], [cx - w * 0.15, base - h], [cx + w * 0.15, base - h], [r, base - h * 0.75]];
+      return `<g class="dg-crown">
+        <path d="${d}" fill="#facc15" stroke="#a16207" stroke-width="2" stroke-linejoin="round"/>
+        <rect x="${f1(l)}" y="${f1(base - h * 0.22)}" width="${f1(w)}" height="${f1(h * 0.22)}" fill="#eab308" stroke="#a16207" stroke-width="1.6"/>
+        <path d="M${f1(l + w * 0.12)} ${f1(base - h * 0.62)} L${f1(l + w * 0.18)} ${f1(base - h * 0.42)}" stroke="white" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+        <circle cx="${f1(cx)}" cy="${f1(base - h * 0.11)}" r="${f1(w * 0.07)}" fill="#e11d48" stroke="#9f1239" stroke-width="1"/>
+        <circle cx="${f1(cx - w * 0.3)}" cy="${f1(base - h * 0.11)}" r="${f1(w * 0.05)}" fill="#38bdf8"/>
+        <circle cx="${f1(cx + w * 0.3)}" cy="${f1(base - h * 0.11)}" r="${f1(w * 0.05)}" fill="#38bdf8"/>
+        ${tips.map(([x, y]) => `<circle cx="${f1(x)}" cy="${f1(y)}" r="${f1(w * 0.045)}" fill="#fef9c3" stroke="#a16207" stroke-width="1"/>`).join('')}
+      </g>`;
+    }
+
+    function dragonArt(level, stars = 0, sp = DRAGON_SPECIES.volcano, crown = false) {
       const shadow = (rx) => `<ellipse cx="120" cy="224" rx="${rx}" ry="8" class="dg-ink" opacity="0.28"/>`;
 
       if (level === 0) {
@@ -3162,6 +3181,8 @@
       parts += `<ellipse cx="124" cy="${f1(headCy)}" rx="${p.headRx}" ry="${p.headRy}" class="dg-shade"/>
         <ellipse cx="120" cy="${f1(headCy)}" rx="${p.headRx}" ry="${p.headRy}" class="dg-body"/>
         ${dragonFace(120, f1(headCy), p.headRx, p.headRy, p.eye, { brows: p.brows, glow: p.mega })}`;
+      // Queens wear a crown on top of the head
+      if (crown) parts += queenCrown(120, headTop + 10, p.headRx * 1.05);
 
       // Mega sparks
       let sparks = '';
