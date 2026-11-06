@@ -432,7 +432,7 @@
       </button>
 
       <!-- Settings Dropdown -->
-      <!-- Dragon Gallery: every dragon type this class has raised to King/Queen -->
+      <!-- Dragon Gallery: every dragon type this class has raised to Queen -->
       <button id="galleryBtn" title="Dragon Gallery" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-750 text-pink-300 border border-violet-700 transition">
         <span>🐉</span>
         <span class="hidden sm:inline">Gallery</span>
@@ -861,7 +861,7 @@
           <span class="text-2xl">🐉</span>
           <div class="min-w-0">
             <h3 id="galleryTitle" class="font-display font-bold text-lg sm:text-xl text-white truncate">Dragon Gallery</h3>
-            <p id="gallerySummary" class="text-xs text-slate-400">Raise a dragon all the way to King or Queen to add it here.</p>
+            <p id="gallerySummary" class="text-xs text-slate-400">Raise a dragon all the way to Queen to add it here.</p>
           </div>
         </div>
         <button id="closeGalleryBtn" class="shrink-0 flex items-center gap-1.5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-violet-800 transition"><span class="kbd" title="Press Esc to close">Esc</span><span>✕</span></button>
@@ -1648,7 +1648,7 @@
       dragonLevel: 0,
       dragonBest: 0,
       dragonFamily: 0,    // grown dragons that reached the final form and laid an egg
-      dragonLineage: [],  // every dragon this session in order: { species, crown }; the current one is [dragonFamily]
+      dragonLineage: [],  // every dragon this session in order: { species, crown, rarity }; the current one is [dragonFamily]
       speciesBag: [],     // dragon types not used yet in this round
       milestones: [], // { side, icon, label, clock } newest first
 
@@ -1718,7 +1718,7 @@
     // family and a new dragon starts. Progress is counted in levels.
     const DRAGON_MEGA_LEVEL = 5;
     const DRAGON_TOP_LEVEL = 12;
-    // The King/Queen stays for one full interval before laying the next egg
+    // The Queen stays for one full interval before laying the next egg
     const DRAGON_MAX_PROGRESS = DRAGON_TOP_LEVEL + 1;
     // The Mega artwork has 10 power steps ("stars" inside the drawing code only).
     // Each level past Mega jumps ahead by more of them, so every change is bigger than the last.
@@ -1734,7 +1734,7 @@
        colors: the dragon's own colors ("R G B"), used instead of the app theme.
        ramp: aura colors for the bigger Mega forms (weak → strongest).
        forms: Mega forms for levels 6–11 as [name, short label, pop-up line].
-       Level 12 is always "<Type> King" or "<Type> Queen" (picked at random). */
+       Level 12 is always "<Type> Queen": in this world only Queens lay eggs. */
     const DRAGON_SPECIES = {
       ice: {
         name: 'Ice Dragon', short: 'Ice', feature: 'ice',
@@ -2359,7 +2359,7 @@
         if (bag.length > 1 && bag[bag.length - 1] === last) bag.unshift(bag.pop());
         state.speciesBag = bag;
       }
-      return { species: state.speciesBag.pop(), crown: Math.random() < 0.5 ? 'King' : 'Queen', rarity: rollRarity() };
+      return { species: state.speciesBag.pop(), crown: 'Queen', rarity: rollRarity() };
     }
     function lineageAt(gen) {
       while (state.dragonLineage.length <= gen) state.dragonLineage.push(pickSpecies());
@@ -2367,7 +2367,8 @@
     }
     const currentDragon = () => lineageAt(state.dragonFamily);
     const speciesOf = (entry) => DRAGON_SPECIES[entry.species];
-    const royalName = (entry) => `${speciesOf(entry).short} ${entry.crown}`;
+    // Only Queens lay eggs, so every grown dragon is a Queen (even older saved "Kings")
+    const royalName = (entry) => `${speciesOf(entry).short} Queen`;
 
     const GROW_STEPS = [
       null, null,
@@ -2377,7 +2378,7 @@
     ];
 
     // Name, track label and pop-up text for a level of a given dragon.
-    // asGoal: the final form is shown as "King or Queen?" until it is reached.
+    // asGoal: the final form is shown as "<Type> Queen?" until it is reached.
     function levelInfo(level, entry, asGoal = false) {
       const sp = speciesOf(entry);
       const r = rarityOf(entry);
@@ -2399,9 +2400,9 @@
         const bang = level >= DRAGON_TOP_LEVEL - 1 ? '!!!' : level >= DRAGON_TOP_LEVEL - 3 ? '!!' : '!';
         return { name, short, title: name.toUpperCase() + bang, sub };
       }
-      if (asGoal) return { name: `${sp.short} King or Queen?`, short: '👑 ?' };
+      if (asGoal) return { name: `${sp.short} Queen?`, short: '👑 ?' };
       const royal = royalName(entry);
-      return { name: royal, short: entry.crown, title: `${royal.toUpperCase()}!!!`, sub: `All hail the ${royal}!` };
+      return { name: royal, short: 'Queen', title: `${royal.toUpperCase()}!!!`, sub: `All hail the ${royal}!` };
     }
     const levelName = (level) => levelInfo(level, currentDragon()).name;
 
@@ -2453,7 +2454,7 @@
       state.dragonGraceMs = dragonSettings.graceSec * 1000;
     }
 
-    // The final form: the dragon becomes a King or Queen, lays an egg, and a new dragon starts
+    // The final form: the dragon becomes a Queen, lays an egg, and a new dragon starts
     function layDragonEgg() {
       const parent = currentDragon();
       const royal = levelInfo(DRAGON_TOP_LEVEL, parent).name;
@@ -3733,7 +3734,7 @@
       const found = SPECIES_KEYS.filter(k => list.some(e => e.species === k)).length;
       document.getElementById('galleryTitle').textContent = `${cls}'s Dragon Gallery`;
       document.getElementById('gallerySummary').textContent = list.length === 0
-        ? 'No dragons yet. Raise a dragon all the way to King or Queen to add it here!'
+        ? 'No dragons yet. Raise a dragon all the way to Queen to add it here!'
         : `${found} of ${SPECIES_KEYS.length} dragon types discovered · ${list.length} dragon${list.length === 1 ? '' : 's'} raised`;
 
       // The dragon being raised right now, at its current level
@@ -3747,7 +3748,7 @@
             <div class="text-xs font-bold uppercase tracking-widest text-quiet-300">🌱 Now raising${state.dragonFamily > 0 ? ` · Dragon #${state.dragonFamily + 1}` : ''}</div>
             <div class="font-display font-bold text-xl sm:text-2xl text-white leading-tight">${nowInfo.name}</div>
             <div class="my-1">${rarityPill(rarityOf(now))}</div>
-            <div class="text-sm text-slate-300">${hatched ? `Level ${nowLevel + 1} · keep it quiet to raise it to ${nowSp.short} King or Queen!` : 'A mystery egg… what kind of dragon will hatch?'}</div>
+            <div class="text-sm text-slate-300">${hatched ? `Level ${nowLevel + 1} · keep it quiet to raise it to ${nowSp.short} Queen!` : 'A mystery egg… what kind of dragon will hatch?'}</div>
           </div>
         </div>`;
 
@@ -3761,22 +3762,21 @@
           return `<div class="on-color rounded-2xl border-2 border-dashed p-3 flex flex-col items-center text-center" style="border-color: rgb(${sp.colors.body}); background: rgb(${sp.colors['wing-dark']} / 0.15)">
             <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible">${awakeArt(nowLevel, now)}</svg>
             <div class="font-display font-bold text-lg text-white mt-1">${sp.name}</div>
-            <div class="text-[11px] text-slate-400">Not raised to King or Queen yet</div>
+            <div class="text-[11px] text-slate-400">Not raised to Queen yet</div>
             ${growTag}
           </div>`;
         }
         if (mine.length === 0) {
           // Not discovered yet: a dark silhouette keeps it a mystery
           return `<div class="rounded-2xl border-2 border-dashed border-violet-700 bg-violet-950/60 p-3 flex flex-col items-center text-center">
-            <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible" style="filter: brightness(0); opacity: 0.35">${awakeArt(DRAGON_TOP_LEVEL, { species: key, crown: 'King' })}</svg>
+            <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible" style="filter: brightness(0); opacity: 0.35">${awakeArt(DRAGON_TOP_LEVEL, { species: key, crown: 'Queen' })}</svg>
             <div class="font-display font-bold text-lg text-slate-500 mt-1">???</div>
             <div class="text-[11px] text-slate-500">Not discovered yet</div>
           </div>`;
         }
-        const kings = mine.filter(e => e.crown === 'King').length, queens = mine.length - kings;
         const latest = mine[mine.length - 1];
         const best = mine.reduce((a, e) => RARITY_KEYS.indexOf(e.rarity || 'common') < RARITY_KEYS.indexOf(a.rarity || 'common') ? e : a);
-        const crowns = [kings ? `👑 ${kings} King${kings === 1 ? '' : 's'}` : '', queens ? `👑 ${queens} Queen${queens === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+        const crowns = `👑 ${mine.length} Queen${mine.length === 1 ? '' : 's'}`;
         return `<div class="on-color rounded-2xl border-2 p-3 flex flex-col items-center text-center" style="border-color: rgb(${sp.colors.body}); background: rgb(${sp.colors['wing-dark']} / 0.22)">
           <svg viewBox="-20 -40 280 290" class="w-full max-w-[150px] h-auto overflow-visible">${awakeArt(DRAGON_TOP_LEVEL, latest)}</svg>
           <div class="font-display font-bold text-lg text-white mt-1">${sp.name}</div>
@@ -3978,7 +3978,7 @@
       document.getElementById('dragonRulesShort').textContent =
         `Grows every ${q} quiet min · ${hearts} heart${hearts === 1 ? '' : 's'} · hides when they run out`;
       document.getElementById('dragonRulesSummary').textContent =
-        `Mega Dragon at ${q * DRAGON_MEGA_LEVEL} quiet min · King/Queen at ${q * DRAGON_TOP_LEVEL} min · a surprise at ${q * DRAGON_MAX_PROGRESS} min.`;
+        `Mega Dragon at ${q * DRAGON_MEGA_LEVEL} quiet min · Queen at ${q * DRAGON_TOP_LEVEL} min · a surprise at ${q * DRAGON_MAX_PROGRESS} min.`;
     }
 
     /* ==========================================================================
