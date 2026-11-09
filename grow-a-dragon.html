@@ -4,6 +4,314 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Grow a Dragon · Classroom Management Tool</title>
+  <script>
+    // Player profiles: settings for this game (the shared code is just below)
+    window.PROFILE_CONFIG = {
+      app: 'quietloud',
+      icon: '🐉',
+      chipBefore: 'micToggleBtn',
+      freshText: 'a new egg, an empty Dragon Gallery and an empty Classes Log',
+      deleteText: 'classes, dragons, Dragon Gallery, settings and Classes Log',
+      // Saves from before profiles existed
+      isLegacyKey: (k) => !!k && k !== 'quietloud-profiles' && k.startsWith('quietloud-'),
+      summary: (read) => {
+        const parts = [];
+        const n = Object.keys(JSON.parse(read('quietloud-classes') || '{}')).length;
+        if (n) parts.push(`${n} class${n === 1 ? '' : 'es'}`);
+        const s = JSON.parse(read('quietloud-session') || 'null');
+        if (s && s.cls) parts.push(s.cls);
+        if (s && (s.quietElapsedMs + s.loudElapsedMs) >= 1000) parts.push(`paused at ${Math.floor((s.quietElapsedMs + s.loudElapsedMs) / 60000)} min`);
+        return parts.join(' · ');
+      },
+      isRunning: () => typeof state !== 'undefined' && !!state.activeTimer,
+    };
+
+    /* ==========================================================================
+       PLAYER PROFILES
+       Each player has their own save. Every key the game stores is quietly
+       filed under the current player, so the rest of the game doesn't need to
+       know about players at all. Pick a player when the page opens; the
+       header button switches players.
+       ========================================================================== */
+    (function () {
+      const CFG = window.PROFILE_CONFIG;
+      const REG_KEY = CFG.app + '-profiles';             // the list of players
+      const CHOSEN_KEY = CFG.app + '-profile-chosen';    // this tab already picked (sessionStorage)
+      const GUEST = '__guest';                           // used until the first player exists
+      const nsOf = (id) => CFG.app + '@' + id + ':';
+      const AVATARS = ['🦊', '🐼', '🦁', '🐸', '🐙', '🦄', '🐢', '🐝', '🦉', '🐧', '🐯', '🐨', '🚀', '⭐', '🌈', '🍕'];
+
+      let LS = null;
+      try { LS = window.localStorage; LS.getItem(REG_KEY); } catch (e) { LS = null; }
+      if (!LS) return; // storage blocked: play without profiles
+
+      const proto = Storage.prototype;
+      const raw = { get: proto.getItem, set: proto.setItem, remove: proto.removeItem, key: proto.key };
+      const rawGet = (k) => raw.get.call(LS, k);
+      const rawSet = (k, v) => { try { raw.set.call(LS, k, v); } catch (e) {} };
+      const rawRemove = (k) => raw.remove.call(LS, k);
+      const allRawKeys = () => {
+        const keys = [];
+        for (let i = 0; i < LS.length; i++) keys.push(raw.key.call(LS, i));
+        return keys;
+      };
+      const removeNamespace = (ns) => allRawKeys().filter(k => k && k.startsWith(ns)).forEach(rawRemove);
+
+      function loadRegistry() {
+        try {
+          const r = JSON.parse(rawGet(REG_KEY) || 'null');
+          if (r && Array.isArray(r.list)) return r;
+        } catch (e) {}
+        return null;
+      }
+      const saveRegistry = () => rawSet(REG_KEY, JSON.stringify(reg));
+      const newId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+      let reg = loadRegistry();
+      if (!reg) {
+        // First time with profiles: anything saved before becomes "Player 1"
+        reg = { list: [], current: '' };
+        const legacy = allRawKeys().filter(CFG.isLegacyKey);
+        if (legacy.length) {
+          const p = { id: newId(), name: 'Player 1', avatar: AVATARS[0], created: Date.now(), lastPlayed: Date.now() };
+          legacy.forEach(k => rawSet(nsOf(p.id) + k, rawGet(k))); // copied, so the old save stays as a backup
+          reg.list.push(p);
+          reg.current = p.id;
+        }
+        saveRegistry();
+      }
+      if (!reg.list.some(p => p.id === reg.current)) reg.current = reg.list.length ? reg.list[0].id : '';
+
+      // The player this page was opened with (switching players reloads the page)
+      const loaded = reg.list.find(p => p.id === reg.current) || null;
+      let NS = nsOf(loaded ? loaded.id : GUEST);
+      removeNamespace(nsOf(GUEST)); // guest play is never kept
+
+      const mapKey = (store, k) => (store === LS && k !== REG_KEY ? NS + k : k);
+      proto.getItem = function (k) { return raw.get.call(this, mapKey(this, String(k))); };
+      proto.setItem = function (k, v) { return raw.set.call(this, mapKey(this, String(k)), v); };
+      proto.removeItem = function (k) { return raw.remove.call(this, mapKey(this, String(k))); };
+
+      // Read another player's saved value (for the summaries on the picker)
+      const readFor = (id) => (k) => rawGet(nsOf(id) + k);
+
+      let chosen = '';
+      try { chosen = sessionStorage.getItem(CHOSEN_KEY) || ''; } catch (e) {}
+      const alreadyPicked = loaded && chosen === loaded.id;
+
+      function markChosen(id) {
+        try { sessionStorage.setItem(CHOSEN_KEY, id); } catch (e) {}
+      }
+      function switchTo(id) {
+        const p = reg.list.find(x => x.id === id);
+        if (!p) return;
+        p.lastPlayed = Date.now();
+        reg.current = id;
+        saveRegistry();
+        markChosen(id);
+        if (loaded && loaded.id === id) { closePicker(); renderChip(); return; }
+        location.reload(); // the game saves the old player on the way out
+      }
+
+      const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      function ago(t) {
+        if (!t) return '';
+        const d = Math.floor((Date.now() - t) / 86400000);
+        if (d <= 0) return 'Played today';
+        if (d === 1) return 'Played yesterday';
+        if (d < 30) return `Played ${d} days ago`;
+        return 'Played ' + new Date(t).toLocaleDateString();
+      }
+
+      /* ---------- The "Who's playing?" screen ---------- */
+      let overlay = null;
+      let editing = null; // null = list; {id?} = new / rename form
+      let pickedAvatar = AVATARS[0];
+
+      function buildOverlay() {
+        overlay = document.createElement('div');
+        overlay.id = 'profilePicker';
+        overlay.tabIndex = -1;
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-label', "Who's playing?");
+        overlay.className = 'fixed inset-0 hidden items-start sm:items-center justify-center overflow-y-auto bg-violet-950/95 backdrop-blur-md p-4';
+        overlay.style.zIndex = '200';
+        document.body.appendChild(overlay);
+        // Keep the game's hotkeys (Space, R, F…) from firing while this is open
+        overlay.addEventListener('keydown', (e) => {
+          e.stopPropagation();
+          if (e.key === 'Escape' && editing) { editing = null; renderPicker(); }
+        });
+        window.addEventListener('keydown', (e) => {
+          if (isOpen() && !(e.target instanceof Node && overlay.contains(e.target))) { e.stopImmediatePropagation(); e.preventDefault(); overlay.focus(); }
+        }, true);
+        overlay.addEventListener('click', onPickerClick);
+        overlay.addEventListener('submit', onPickerSubmit);
+      }
+      const isOpen = () => overlay && !overlay.classList.contains('hidden');
+
+      function renderPicker() {
+        const btn = 'rounded-xl border font-bold transition';
+        let body;
+        if (editing) {
+          const p = editing.id ? reg.list.find(x => x.id === editing.id) : null;
+          body = `
+            <h2 class="text-2xl sm:text-3xl font-display font-bold text-white text-center">${p ? 'Edit player' : 'New player'}</h2>
+            <form class="mt-6 bg-violet-900 border border-violet-700 rounded-2xl p-5 space-y-5" autocomplete="off">
+              <label class="block">
+                <span class="text-xs uppercase font-bold tracking-wider text-pink-300">Name</span>
+                <input name="profileName" maxlength="20" required value="${p ? esc(p.name) : ''}" placeholder="e.g. Ms. Lee's class, Sam, Room 12"
+                  class="mt-1.5 w-full bg-violet-950 border border-violet-700 rounded-xl px-3 py-2.5 text-white font-semibold focus:outline-none focus:border-pink-400">
+              </label>
+              <div>
+                <span class="text-xs uppercase font-bold tracking-wider text-pink-300">Picture</span>
+                <div class="mt-2 grid grid-cols-8 gap-2">
+                  ${AVATARS.map(a => `<button type="button" data-avatar="${a}" aria-label="Picture ${a}" aria-pressed="${a === pickedAvatar}"
+                    class="${btn} aspect-square text-2xl ${a === pickedAvatar ? 'bg-pink-500/25 border-pink-400' : 'bg-violet-800 border-violet-700 hover:bg-violet-750'}">${a}</button>`).join('')}
+                </div>
+              </div>
+              ${p ? '' : `<p class="text-sm text-slate-400">A new player starts fresh: ${esc(CFG.freshText)}.</p>`}
+              <div class="flex gap-3 justify-end">
+                ${reg.list.length ? `<button type="button" data-act="cancel" class="${btn} px-4 py-2.5 bg-violet-800 border-violet-700 text-slate-200 hover:bg-violet-750">Back</button>` : ''}
+                <button type="submit" class="${btn} px-5 py-2.5 bg-pink-500 border-pink-400 text-white hover:bg-pink-400 on-color">${p ? 'Save' : 'Create & play'}</button>
+              </div>
+            </form>`;
+        } else {
+          const cards = reg.list.slice().sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0)).map(p => {
+            let summary = '';
+            try { summary = CFG.summary(readFor(p.id)) || ''; } catch (e) {}
+            return `
+            <div class="relative group">
+              <button type="button" data-pick="${p.id}" class="w-full h-full text-left flex items-center gap-4 p-4 rounded-2xl border-2 transition bg-violet-900 border-violet-700 hover:border-pink-400 hover:bg-violet-800 focus:outline-none focus:border-pink-400">
+                <span class="text-4xl sm:text-5xl leading-none" aria-hidden="true">${esc(p.avatar)}</span>
+                <span class="min-w-0 pr-14">
+                  <span class="block text-lg font-display font-bold text-white truncate">${esc(p.name)}</span>
+                  ${summary ? `<span class="block text-sm text-pink-300 font-semibold">${esc(summary)}</span>` : ''}
+                  <span class="block text-xs text-slate-400 mt-0.5">${ago(p.lastPlayed)}</span>
+                </span>
+              </button>
+              <div class="absolute top-2 right-2 flex gap-1">
+                <button type="button" data-edit="${p.id}" title="Rename ${esc(p.name)}" aria-label="Rename ${esc(p.name)}" class="w-8 h-8 rounded-lg text-sm bg-violet-800/80 hover:bg-violet-700 border border-violet-700">✏️</button>
+                <button type="button" data-del="${p.id}" title="Delete ${esc(p.name)}" aria-label="Delete ${esc(p.name)}" class="w-8 h-8 rounded-lg text-sm bg-violet-800/80 hover:bg-violet-700 border border-violet-700">🗑</button>
+              </div>
+            </div>`;
+          }).join('');
+          body = `
+            <div class="text-center">
+              <div class="text-5xl" aria-hidden="true">${CFG.icon}</div>
+              <h2 class="mt-2 text-2xl sm:text-3xl font-display font-bold text-white">Who's playing?</h2>
+              <p class="mt-1 text-sm text-slate-400">Pick a player to carry on where they left off.</p>
+            </div>
+            <div class="mt-6 grid gap-3 sm:grid-cols-2">
+              ${cards}
+              <button type="button" data-act="new" class="flex items-center justify-center gap-3 p-4 min-h-[5.5rem] rounded-2xl border-2 border-dashed border-violet-600 text-pink-300 font-display font-bold text-lg hover:border-pink-400 hover:bg-violet-900 transition">
+                <span class="text-3xl leading-none" aria-hidden="true">＋</span> New player
+              </button>
+            </div>`;
+        }
+        overlay.innerHTML = `<div class="w-full max-w-2xl my-8">${body}</div>`;
+        const input = overlay.querySelector('input[name="profileName"]');
+        if (input) { input.focus(); input.select(); } else overlay.focus();
+      }
+
+      function onPickerClick(e) {
+        const t = e.target.closest('button');
+        if (!t) return;
+        if (t.dataset.pick) switchTo(t.dataset.pick);
+        else if (t.dataset.avatar) { pickedAvatar = t.dataset.avatar; const n = overlay.querySelector('input[name="profileName"]'); const v = n ? n.value : ''; renderPicker(); const n2 = overlay.querySelector('input[name="profileName"]'); if (n2) n2.value = v; }
+        else if (t.dataset.act === 'new') { editing = {}; pickedAvatar = AVATARS[reg.list.length % AVATARS.length]; renderPicker(); }
+        else if (t.dataset.act === 'cancel') { editing = null; renderPicker(); }
+        else if (t.dataset.edit) { const p = reg.list.find(x => x.id === t.dataset.edit); editing = { id: p.id }; pickedAvatar = p.avatar; renderPicker(); }
+        else if (t.dataset.del) deleteProfile(t.dataset.del);
+      }
+
+      function onPickerSubmit(e) {
+        e.preventDefault();
+        const name = (overlay.querySelector('input[name="profileName"]').value || '').trim().slice(0, 20);
+        if (!name) return;
+        if (editing && editing.id) {
+          const p = reg.list.find(x => x.id === editing.id);
+          p.name = name; p.avatar = pickedAvatar;
+          saveRegistry();
+          editing = null;
+          renderPicker();
+          renderChip();
+          return;
+        }
+        const p = { id: newId(), name, avatar: pickedAvatar, created: Date.now(), lastPlayed: Date.now() };
+        reg.list.push(p);
+        saveRegistry();
+        editing = null;
+        switchTo(p.id);
+      }
+
+      function deleteProfile(id) {
+        const p = reg.list.find(x => x.id === id);
+        if (!p) return;
+        if (!confirm(`Delete ${p.name}? Everything saved for this player (${CFG.deleteText}) will be gone for good.`)) return;
+        removeNamespace(nsOf(id));
+        reg.list = reg.list.filter(x => x.id !== id);
+        if (reg.current === id) reg.current = reg.list.length ? reg.list[0].id : '';
+        saveRegistry();
+        if (loaded && loaded.id === id) {
+          // This page is still playing as them: stop saving under their name, then start over
+          NS = nsOf(GUEST);
+          try { sessionStorage.removeItem(CHOSEN_KEY); } catch (e) {}
+          location.reload();
+          return;
+        }
+        if (!reg.list.length) editing = {};
+        renderPicker();
+      }
+
+      function openPicker() {
+        editing = reg.list.length ? null : {};
+        renderPicker();
+        overlay.classList.remove('hidden');
+        overlay.classList.add('flex');
+        if (CFG.onOpen) try { CFG.onOpen(); } catch (e) {}
+      }
+      function closePicker() {
+        overlay.classList.add('hidden');
+        overlay.classList.remove('flex');
+      }
+
+      /* ---------- Header button: who's playing now ---------- */
+      let chip = null;
+      function renderChip() {
+        if (!chip) return;
+        const p = reg.list.find(x => x.id === (loaded && loaded.id));
+        chip.innerHTML = p
+          ? `<span class="text-base leading-none" aria-hidden="true">${esc(p.avatar)}</span><span class="hidden sm:inline max-w-[8rem] truncate">${esc(p.name)}</span>`
+          : `<span class="text-base leading-none" aria-hidden="true">👤</span><span class="hidden sm:inline">Players</span>`;
+        chip.title = p ? `Playing as ${p.name}. Click to switch players.` : 'Pick a player';
+      }
+      function addChip() {
+        const anchor = document.getElementById(CFG.chipBefore);
+        if (!anchor) return;
+        chip = document.createElement('button');
+        chip.id = 'profileChip';
+        chip.type = 'button';
+        chip.className = 'flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-750 text-white border border-violet-700 transition';
+        anchor.parentNode.insertBefore(chip, anchor);
+        renderChip();
+        chip.addEventListener('click', () => {
+          if (CFG.isRunning && CFG.isRunning() && !confirm('Switch players? The clock will pause, and this player\'s place is saved.')) return;
+          try { sessionStorage.removeItem(CHOSEN_KEY); } catch (e) {}
+          location.reload(); // the game saves on the way out; the picker opens on the way in
+        });
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        buildOverlay();
+        addChip();
+        if (!alreadyPicked) openPicker();
+      });
+
+      window.playerProfiles = { open: openPicker, current: () => loaded && { ...loaded } };
+    })();
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Google Fonts: Fredoka (playful/rounded numbers without dotted zeros) & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -3716,6 +4024,7 @@
       let lastClass = '';
       try { lastClass = localStorage.getItem('quietloud-last-class') || ''; } catch (e) {}
       loadClass(lastClass || dom.classNameInput.value.trim() || 'Untitled Class');
+      restoreSession();
       dom.classNameInput.addEventListener('change', () => switchClass(dom.classNameInput.value));
       dom.classNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') dom.classNameInput.blur(); });
       document.getElementById('restartDragonBtn').addEventListener('click', restartClassDragon);
@@ -3904,6 +4213,37 @@
       all[state.currentClass] = { dragon: snapshotDragon(), totals: state.classTotals, updated: Date.now() };
       saveClasses(all);
       try { localStorage.setItem('quietloud-last-class', state.currentClass); } catch (e) {}
+      saveSession();
+    }
+
+    // PICK UP WHERE YOU LEFT OFF: the clocks of the current session are saved with the
+    // class's dragon (same moment, so they always match) and come back paused next time
+    const SESSION_KEY = 'quietloud-session';
+    const SESSION_FIELDS = ['loudElapsedMs', 'quietElapsedMs', 'loudTurns', 'quietTurns', 'totalSwitches', 'lastActiveSide',
+      'milestones', 'dragonHistory', 'dragonBaseline', 'dragonGraceMs', 'mode', 'countdownDuration'];
+    function saveSession() {
+      const snap = { cls: state.currentClass, saved: Date.now() };
+      SESSION_FIELDS.forEach(k => { snap[k] = state[k]; });
+      try { localStorage.setItem(SESSION_KEY, JSON.stringify(snap)); } catch (e) {}
+    }
+    function restoreSession() {
+      let s = null;
+      try { s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) {}
+      if (!s || typeof s !== 'object' || s.cls !== state.currentClass) return;
+      SESSION_FIELDS.forEach(k => {
+        if (s[k] !== undefined && s[k] !== null && typeof s[k] === typeof state[k] && Array.isArray(s[k]) === Array.isArray(state[k])) state[k] = s[k];
+      });
+      // Put the timer-mode buttons back the way they were
+      const preset = document.querySelector(`.preset-btn[data-duration="${state.countdownDuration}"]`);
+      if (preset) preset.click();
+      (state.mode === 'count-down' ? dom.modeCountDownBtn : dom.modeCountUpBtn).click();
+      dom.loudTurnsCount.textContent = state.loudTurns;
+      dom.quietTurnsCount.textContent = state.quietTurns;
+      dom.totalSwitchesDisplay.textContent = state.totalSwitches;
+      renderMilestones();
+      renderDragon();
+      applyVisualState();
+      updateDisplay();
     }
     // Load a class's dragon (a new class starts with a fresh egg)
     function loadClass(name) {
