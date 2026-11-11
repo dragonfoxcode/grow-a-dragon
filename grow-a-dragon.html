@@ -3893,7 +3893,7 @@
     // Wrapped in the dragon type's colors so it looks right anywhere (stage, pop-ups, family, gallery)
     const dragonArtFor = (level, entry = currentDragon()) => {
       const sp = speciesOf(entry);
-      return `<g style="${speciesStyle(sp)}">${dragonArt(Math.min(level, DRAGON_MEGA_LEVEL), artStars(level), sp, level >= DRAGON_TOP_LEVEL)}</g>`;
+      return `<g style="${speciesStyle(sp)}">${dragonArt(Math.min(level, DRAGON_MEGA_LEVEL), artStars(level), sp, level >= DRAGON_TOP_LEVEL, entry.rarity)}</g>`;
     };
 
     // Small copies (pop-ups, family) never sleep, so leave out the "Zzz"
@@ -4198,11 +4198,75 @@
       }
     }
 
-    function dragonArt(level, stars = 0, sp = DRAGON_SPECIES.volcano, crown = false) {
+    /* ---------- Rarity marks ----------
+       Small extras drawn on the dragon so its rarity shows in the art itself (Common has none):
+       Uncommon: a round forehead gem.   Rare: a diamond gem.
+       Super Rare: a star gem and a bead collar.   Epic: a cut gem and a collar with a pendant.
+       Legendary: a rainbow gem and a rainbow collar with a star pendant.
+       Eggs get one sparkle per step above Common. */
+    const RAINBOW = ['#f87171', '#fbbf24', '#4ade80', '#38bdf8', '#818cf8', '#c084fc'];
+    const rarityRank = (rarity) => { const i = RARITY_KEYS.indexOf(rarity); return i < 0 ? 0 : RARITY_KEYS.length - 1 - i; }; // 0 common … 5 legendary
+    const GEM_EDGE = 'stroke="rgb(var(--dragon-ink))" stroke-width="1.3" stroke-linejoin="round"';
+    const polyPath = (cx, cy, r, n, turn = 0, squash = 1) => Array.from({ length: n }, (_, i) => {
+      const a = turn + i * 2 * Math.PI / n;
+      return `${i ? 'L' : 'M'}${f1(cx + Math.cos(a) * r * squash)} ${f1(cy + Math.sin(a) * r)}`;
+    }).join(' ') + ' Z';
+    // The gem on the forehead: (cx, cy) is its center, r its base size
+    function rarityGem(rarity, cx, cy, r) {
+      const rank = rarityRank(rarity), c = (RARITIES[rarity] || {}).color;
+      const glint = (k = 1) => `<circle cx="${f1(cx - r * 0.3 * k)}" cy="${f1(cy - r * 0.35 * k)}" r="${f1(r * 0.24)}" fill="white" opacity="0.9"/>`;
+      if (rank === 1) return `<circle cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r)}" fill="${c}" ${GEM_EDGE}/>${glint()}`;
+      if (rank === 2) return `<path d="${polyPath(cx, cy, r * 1.35, 4, -Math.PI / 2, 0.75)}" fill="${c}" ${GEM_EDGE}/>${glint()}`;
+      if (rank === 3) {
+        const R = r * 1.7, q = R * 0.36;
+        return `<path d="M${f1(cx)} ${f1(cy - R)} L${f1(cx + q)} ${f1(cy - q)} L${f1(cx + R)} ${f1(cy)} L${f1(cx + q)} ${f1(cy + q)} L${f1(cx)} ${f1(cy + R)} L${f1(cx - q)} ${f1(cy + q)} L${f1(cx - R)} ${f1(cy)} L${f1(cx - q)} ${f1(cy - q)} Z" fill="${c}" ${GEM_EDGE}/><circle cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r * 0.35)}" fill="white" opacity="0.9"/>`;
+      }
+      const R = r * 1.5, hex = polyPath(cx, cy, R, 6, -Math.PI / 2);
+      if (rank === 4) {
+        return `<path d="${hex}" fill="${c}" ${GEM_EDGE}/><path d="${polyPath(cx, cy, R * 0.5, 6, -Math.PI / 2)}" fill="white" opacity="0.35"/>
+          <path d="M${f1(cx)} ${f1(cy - R)} L${f1(cx)} ${f1(cy + R)}" stroke="white" stroke-width="0.9" opacity="0.6"/>${glint(1.3)}`;
+      }
+      if (rank === 5) { // six wedges, one per rainbow color
+        const pt = (i) => { const a = -Math.PI / 2 + i * Math.PI / 3; return `${f1(cx + Math.cos(a) * R)} ${f1(cy + Math.sin(a) * R)}`; };
+        return RAINBOW.map((col, i) => `<path d="M${f1(cx)} ${f1(cy)} L${pt(i)} L${pt(i + 1)} Z" fill="${col}"/>`).join('') +
+          `<path d="${hex}" fill="none" ${GEM_EDGE}/><circle cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(R * 0.3)}" fill="white" opacity="0.85"/>`;
+      }
+      return '';
+    }
+    // A bead collar under the chin (Super Rare and up): (cx, y) is the middle of the chin line, w its half width
+    function rarityCollar(rarity, cx, y, w, r) {
+      const rank = rarityRank(rarity), c = (RARITIES[rarity] || {}).color;
+      if (rank < 3) return '';
+      const n = rank === 3 ? 3 : rank === 4 ? 5 : 7, dip = w * 0.3;
+      let out = '';
+      for (let i = 0; i < n; i++) {
+        const t = n === 1 ? 0 : -1 + (2 * i) / (n - 1);
+        const fill = rank === 5 ? RAINBOW[i % RAINBOW.length] : c;
+        out += `<circle cx="${f1(cx + t * w)}" cy="${f1(y + (1 - t * t) * dip)}" r="${f1(r)}" fill="${fill}" stroke="rgb(var(--dragon-ink))" stroke-width="1"/>`;
+      }
+      const py = y + dip + r * 2.4;
+      if (rank === 4) out += `<path d="${polyPath(cx, py, r * 1.9, 4, -Math.PI / 2, 0.7)}" fill="${c}" ${GEM_EDGE}/>`;
+      if (rank === 5) out += `<path d="${starPath(cx, py + r * 0.4, r * 2.4)}" fill="#fde047" ${GEM_EDGE}/>`;
+      return out;
+    }
+    function starPath(cx, cy, r) {
+      return Array.from({ length: 10 }, (_, i) => {
+        const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
+        return `${i ? 'L' : 'M'}${f1(cx + Math.cos(a) * rr)} ${f1(cy + Math.sin(a) * rr)}`;
+      }).join(' ') + ' Z';
+    }
+    // Sparkles on the egg shell: one per step above Common
+    function rarityEggMarks(rarity) {
+      const rank = rarityRank(rarity), c = (RARITIES[rarity] || {}).color;
+      const spots = [[146, 100, 6], [104, 138, 5], [150, 190, 5], [118, 196, 4], [96, 92, 4]];
+      return spots.slice(0, rank).map(([x, y, r], i) => sparkle(x, y, r, rank === 5 ? RAINBOW[i] : c, 1).replace('/>', ' stroke="rgb(var(--dragon-ink))" stroke-width="0.8" stroke-linejoin="round"/>')).join('');
+    }
+
+    function dragonArt(level, stars = 0, sp = DRAGON_SPECIES.volcano, crown = false, rarity = 'common') {
       const shadow = (rx) => `<ellipse cx="120" cy="224" rx="${rx}" ry="8" class="dg-ink" opacity="0.28"/>`;
 
       if (level === 0) {
-        return shadow(48) + atFeet(0.72, `<g class="dg-egg-rock">${eggShell()}</g>`) + zzz(158, 105);
+        return shadow(48) + atFeet(0.72, `<g class="dg-egg-rock">${eggShell(rarityEggMarks(rarity))}</g>`) + zzz(158, 105);
       }
 
       if (level === 1) {
@@ -4211,7 +4275,7 @@
           <path class="dg-horn" d="M98 98 l4 -14 l8 12 Z"/><path class="dg-horn" d="M142 98 l-4 -14 l-8 12 Z"/>
           <ellipse cx="${hx + 4}" cy="${hy}" rx="${hrx}" ry="${hry}" class="dg-shade"/>
           <ellipse cx="${hx}" cy="${hy}" rx="${hrx}" ry="${hry}" class="dg-body"/>
-          ${dragonFace(hx, hy, hrx, hry, 13)}`;
+          ${dragonFace(hx, hy, hrx, hry, 13)}${rarityGem(rarity, hx, hy - hry * 0.62, 3.6)}`;
         const bottom = `
           <path class="dg-belly" d="M62 162 L76 148 L90 164 L104 146 L120 162 L136 146 L150 164 L164 148 L178 162 C178 204 152 224 120 224 C88 224 62 204 62 162 Z"/>
           <circle class="dg-body" cx="98" cy="200" r="7"/><circle class="dg-body" cx="148" cy="196" r="5"/><circle class="dg-body" cx="132" cy="184" r="4"/>
@@ -4361,6 +4425,9 @@
       parts += `<ellipse cx="124" cy="${f1(headCy)}" rx="${p.headRx}" ry="${p.headRy}" class="dg-shade"/>
         <ellipse cx="120" cy="${f1(headCy)}" rx="${p.headRx}" ry="${p.headRy}" class="dg-body"/>
         ${dragonFace(120, f1(headCy), p.headRx, p.headRy, p.eye, { brows: p.brows, glow: p.mega })}`;
+      // Rarity marks: a gem on the forehead and, for the rarest, a bead collar under the chin
+      parts += rarityGem(rarity, 120, headCy - p.headRy * 0.56, p.headRx * 0.085);
+      parts += rarityCollar(rarity, 120, headCy + p.headRy * 0.97, p.headRx * 0.5, p.headRx * 0.062);
       // Monarchs wear a crown on top of the head
       if (crown) parts += queenCrown(120, headTop + 10, p.headRx * 1.05);
 
