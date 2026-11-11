@@ -915,20 +915,20 @@
     @keyframes torch { from { box-shadow: inset 0 0 10px rgb(0 0 0 / 0.7), 0 0 0 2px rgb(var(--base-950)), 0 0 10px rgb(var(--loud-500) / 0.25); } to { box-shadow: inset 0 0 10px rgb(0 0 0 / 0.7), 0 0 0 2px rgb(var(--base-950)), 0 0 20px rgb(var(--loud-500) / 0.5); } }
 
     /* ---------- Plates: every button is a carved stone / metal plate ---------- */
-    html body :where(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button) {
+    html body :where(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #showHeaderBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button) {
       background-color: rgb(var(--base-800));
     }
-    html body :is(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button):not([data-gallery-key]):not([data-card-nav]):not([data-card-level]):not([data-pick]):not(.no-plate) {
+    html body :is(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #showHeaderBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button):not([data-gallery-key]):not([data-card-nav]):not([data-card-level]):not([data-pick]):not(.no-plate) {
       background-image: linear-gradient(rgb(255 255 255 / 0.2), rgb(255 255 255 / 0.04) 45%, rgb(0 0 0 / 0.22)), var(--grain);
       border-radius: 6px;
       box-shadow: inset 0 1px 0 rgb(255 255 255 / calc(var(--hi-a) + 0.08)), inset 0 -3px 0 rgb(0 0 0 / var(--lo-a)), 0 2px 0 rgb(0 0 0 / 0.5);
       text-shadow: 0 1px 0 var(--text-edge);
       transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
     }
-    html body :is(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button):not([data-gallery-key]):not([data-card-nav]):not([data-card-level]):not([data-pick]):not(.no-plate):not(:disabled):hover {
+    html body :is(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #showHeaderBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button):not([data-gallery-key]):not([data-card-nav]):not([data-card-level]):not([data-pick]):not(.no-plate):not(:disabled):hover {
       filter: brightness(1.13);
     }
-    html body :is(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button):not([data-gallery-key]):not([data-card-nav]):not([data-card-level]):not([data-pick]):not(.no-plate):not(:disabled):active {
+    html body :is(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #showHeaderBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button):not([data-gallery-key]):not([data-card-nav]):not([data-card-level]):not([data-pick]):not(.no-plate):not(:disabled):active {
       transform: translateY(2px);
       box-shadow: inset 0 3px 7px rgb(0 0 0 / 0.5), inset 0 0 0 1px rgb(0 0 0 / 0.25), 0 0 0 rgb(0 0 0 / 0);
       filter: brightness(0.94);
@@ -1010,13 +1010,13 @@
     @media (min-width: 640px) { html body :is(#loudCard, #quietCard) { padding: 1rem; } }
     html body .timer-digits { font-size: clamp(1.6rem, calc((100cqw - 6px) / 3.7), 9rem); }
     html body .timer-digits.long { font-size: clamp(1.3rem, calc((100cqw - 6px) / 4.9), 7.4rem); }
-    html body :is(#loudTimeDisplay, #quietTimeDisplay) {
+    html body :is(#loudTimeDisplay, #quietTimeDisplay, #netTimeDisplay) {
       padding: 0.08em 0.2em 0.1em; border-radius: 8px; max-width: 100%; white-space: nowrap; font-variant-numeric: tabular-nums;
       background: linear-gradient(rgb(0 0 0 / 0.42), rgb(0 0 0 / 0.26));
       border: 2px solid rgb(0 0 0 / 0.4); border-bottom-color: rgb(255 255 255 / 0.1);
       box-shadow: inset 0 4px 10px rgb(0 0 0 / 0.55);
     }
-    html.light body :is(#loudTimeDisplay, #quietTimeDisplay) {
+    html.light body :is(#loudTimeDisplay, #quietTimeDisplay, #netTimeDisplay) {
       background: linear-gradient(rgb(var(--base-950) / 0.9), rgb(var(--base-900) / 0.7)); border-color: rgb(var(--base-700) / 0.6); box-shadow: inset 0 3px 8px rgb(60 40 15 / 0.28);
     }
     html body :is(#loudStatusPill, #quietStatusPill, #dragonMood) {
@@ -1258,7 +1258,7 @@
       html.fit-field body #playField > * { min-height: 0; }
       html.fit-field body #dragonArea { min-height: 0; }
       /* the dragon takes the height that is left instead of a fixed width */
-      html.fit-field body #dragonWrap { width: auto; height: min(100%, 330px); max-width: 80%; }
+      html.fit-field body #dragonWrap { width: auto; height: min(100%, 420px); max-width: 80%; }
     }
     /* Short windows: tighten everything around the dragon so it keeps most of the room */
     @media (min-width: 1024px) and (max-height: 940px) {
@@ -1275,6 +1275,38 @@
       html.fit-field body #dragonHint { display: none; }
       html.fit-field body .timer-card { gap: 0.5rem; padding-top: 1rem; padding-bottom: 1rem; }
     }
+    /* ==========================================================================
+       STACKED CLOCKS (wide screens): the mascot on the left, and on the right
+       Quiet Time, Loud Time and their difference, one under the other with the
+       numbers lined up. Each clock card lies on its side: name on the left,
+       digits on the right.
+       ========================================================================== */
+    html body #netCard { container-type: inline-size; }
+    html body #netCard .timer-digits, html body #netCard .timer-digits.long { font-size: clamp(32px, 12cqw, 72px); }
+    @media (min-width: 1024px) {
+      html body #playField { gap: 0.75rem 1.25rem; }
+      html body :is(#loudCard, #quietCard) {
+        display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr);
+        column-gap: 0.75rem; row-gap: 0.3rem; align-items: center; padding: 0.6rem 0.9rem; container-type: inline-size;
+      }
+      html body #netCard { padding: 0.45rem 0.9rem; }
+      html body .tc-head { grid-column: 1; grid-row: 1; gap: 0.5rem; }
+      html body .tc-head > div:first-child { width: 44px; height: 44px; font-size: 22px; border-width: 3px; border-radius: 12px; }
+      html body .tc-head h2 { font-size: 24px; white-space: nowrap; }
+      html body .tc-pill { grid-column: 1; grid-row: 2; }
+      html body .tc-pill > div { padding: 2px 10px; font-size: 12px; }
+      html body .tc-foot { grid-column: 1; grid-row: 3; align-self: end; font-size: 12px; }
+      html body .tc-foot > span:last-child { font-size: 16px; }
+      html body .tc-main { grid-column: 2; grid-row: 1 / span 3; align-items: flex-end; text-align: right; padding: 0; min-width: 0; }
+      html body .tc-main > p { margin-top: 2px; font-size: 13px; }
+      html body .tc-main #silenceBox { margin-top: 4px; padding: 3px 8px; }
+      html body :is(#loudCard, #quietCard, #netCard) .timer-digits { font-size: clamp(34px, calc(100cqw / 7.7), 110px); }
+      html body :is(#loudCard, #quietCard, #netCard) .timer-digits.long { font-size: clamp(28px, calc(100cqw / 9.8), 86px); }
+    }
+    @media (min-width: 1024px) and (max-height: 800px) {
+      html body .tc-head > div > span { display: none; }
+      html body .tc-foot .kbd-row { display: none; }
+    }
     /* Very short: the dragon also tucks up beside the hearts (the title stays on top of it) */
     @media (min-width: 1024px) and (max-height: 800px) {
       html.fit-field body #dragonArea { margin-top: -2.25rem; }
@@ -1284,7 +1316,7 @@
 <body class="bg-violet-950 text-slate-100 font-sans min-h-screen flex flex-col justify-between overflow-x-hidden selection:bg-loud-500 selection:text-white">
 
   <!-- Header / Top Bar -->
-  <header class="w-full px-4 sm:px-8 py-3.5 border-b border-violet-800/60 bg-violet-900/80 backdrop-blur-md flex items-center justify-between z-30 sticky top-0">
+  <header id="topBar" class="w-full px-4 sm:px-8 py-3.5 border-b border-violet-800/60 bg-violet-900/80 backdrop-blur-md flex items-center justify-between z-30 sticky top-0">
     <div class="flex items-center gap-3">
       <div class="crest flex items-center justify-center w-11 h-11 rounded-2xl bg-gradient-to-br from-loud-500 to-quiet-400 shadow-lg text-2xl">
         🐉
@@ -1342,6 +1374,11 @@
       <button id="settingsModalBtn" title="Settings & Mic Config" class="p-2 rounded-xl bg-violet-800 hover:bg-violet-750 text-slate-300 border border-violet-700 transition">
         <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
       </button>
+
+      <!-- Hide the top bar to save room (a small "Menu" button in the player bar brings it back) -->
+      <button id="hideHeaderBtn" title="Hide the top bar (H)" aria-label="Hide the top bar" class="flex items-center gap-1.5 text-xs font-semibold p-2 rounded-xl bg-violet-800 hover:bg-violet-750 text-slate-300 border border-violet-700 transition">
+        <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+      </button>
     </div>
   </header>
 
@@ -1386,11 +1423,11 @@
 
     <!-- Save Class Session to Log Button -->
     <div class="flex items-center gap-2">
-      <!-- Net time: Quiet Time minus Loud Time (green when quiet is ahead, red when loud is) -->
-      <div id="netTimeBox" title="Quiet Time minus Loud Time" class="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-violet-950/70 border border-violet-700 text-slate-300 whitespace-nowrap">
-        <span class="hidden sm:inline">Quiet − Loud</span><span class="sm:hidden" aria-hidden="true">⚖️</span>
-        <span id="netTimeDisplay" class="font-display numeral-display text-sm text-white" aria-live="off">00:00</span>
-      </div>
+      <!-- Shown only while the top bar is hidden -->
+      <button id="showHeaderBtn" title="Show the top bar: players, sound, log, settings (H)" class="hidden items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-700 text-cyan-300 border border-violet-700 transition whitespace-nowrap">
+        <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        <span>Menu</span>
+      </button>
       <button id="saveSessionBtn" title="Sessions are saved to the log on their own. This saves right now." class="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-700 text-cyan-300 border border-violet-700 transition">
         <span>💾 Save Current Session to Log</span>
       </button>
@@ -1400,10 +1437,10 @@
   <!-- Main Playing Field: Loud card | Dragon stage | Quiet card -->
   <main class="flex-1 max-w-[1680px] w-full mx-auto p-3 sm:p-6 lg:p-6 flex flex-col justify-center">
 
-    <div id="playField" class="grid grid-cols-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.4fr)_minmax(0,1.1fr)] gap-3 sm:gap-6 items-stretch">
+    <div id="playField" class="grid grid-cols-2 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 sm:gap-6 items-stretch">
 
       <!-- DRAGON STAGE (center) -->
-      <section id="dragonStage" class="col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-1 relative flex flex-col overflow-hidden rounded-[2.5rem] border-4 border-violet-800 shadow-2xl min-h-[420px] sm:min-h-[520px]">
+      <section id="dragonStage" class="col-span-2 lg:col-span-1 lg:col-start-1 lg:row-start-1 lg:row-span-3 relative flex flex-col overflow-hidden rounded-[2.5rem] border-4 border-violet-800 shadow-2xl min-h-[420px] sm:min-h-[520px]">
         <!-- Background scene: the theme's night scene for the egg, then the dragon type's own scene (built by sceneArt) -->
         <div id="stageScene" class="absolute inset-0 transition-opacity duration-500">
         <svg class="absolute inset-0 w-full h-full" viewBox="0 0 600 500" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
@@ -1486,24 +1523,24 @@
       </section>
 
       <!-- LOUD TIME CARD -->
-      <div id="loudCard" class="timer-card group relative flex flex-col gap-3 p-4 sm:p-6 rounded-[2rem] cursor-pointer bg-gradient-to-b from-violet-900 to-violet-950 border-4 border-violet-800 hover:border-loud-500/70 shadow-2xl overflow-hidden lg:col-start-1 lg:row-start-1">
+      <div id="loudCard" class="timer-card group relative flex flex-col gap-3 p-4 sm:p-6 rounded-[2rem] cursor-pointer bg-gradient-to-b from-violet-900 to-violet-950 border-4 border-violet-800 hover:border-loud-500/70 shadow-2xl overflow-hidden lg:col-start-2 lg:row-start-2">
         <div id="loudAura" class="aura-loud absolute inset-0 opacity-0 pointer-events-none transition-opacity duration-300"></div>
 
-        <div class="relative z-10 flex items-center gap-3">
+        <div class="tc-head relative z-10 flex items-center gap-3">
           <div id="loudMascot" class="w-12 h-12 sm:w-16 sm:h-16 shrink-0 rounded-2xl bg-loud-500/15 border-4 border-loud-500/40 flex items-center justify-center text-2xl sm:text-4xl shadow-inner">📢</div>
           <div class="min-w-0">
             <span class="hidden sm:block text-xs font-bold tracking-widest uppercase text-pink-300">Uh-Oh Mode!</span>
             <h2 class="text-xl sm:text-3xl xl:text-4xl font-display font-bold text-white leading-tight">Loud Time</h2>
           </div>
         </div>
-        <div class="relative z-10 hidden sm:block">
+        <div class="tc-pill relative z-10 hidden sm:block">
           <div id="loudStatusPill" class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-sm font-bold bg-violet-800 text-slate-300 border border-violet-700 transition-all">
             <span id="loudStatusDot" class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
             <span id="loudStatusText">IDLE</span>
           </div>
         </div>
 
-        <div class="relative z-10 flex-1 flex flex-col items-center justify-center text-center py-2">
+        <div class="tc-main relative z-10 flex-1 flex flex-col items-center justify-center text-center py-2">
           <div id="loudTimeDisplay" class="timer-digits font-display numeral-display font-bold text-white select-none">00:00.0</div>
           <p class="text-sm sm:text-base text-pink-300/90 mt-2 font-semibold" id="loudSubDetails">Too noisy? Tap here!</p>
 
@@ -1519,7 +1556,7 @@
           </div>
         </div>
 
-        <div class="relative z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs sm:text-sm font-semibold text-slate-300">
+        <div class="tc-foot relative z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs sm:text-sm font-semibold text-slate-300">
           <span>⚡ Turns: <span id="loudTurnsCount" class="text-loud-400 font-bold">0</span></span>
           <span class="kbd-row" title="Hotkeys: A or Left Arrow"><span class="kbd">A</span><span class="kbd-sep">or</span><span class="kbd">←</span></span>
           <span id="loudShareText" class="font-display font-bold text-loud-400 text-lg sm:text-xl">50.0%</span>
@@ -1527,33 +1564,41 @@
       </div>
 
       <!-- QUIET TIME CARD -->
-      <div id="quietCard" class="timer-card group relative flex flex-col gap-3 p-4 sm:p-6 rounded-[2rem] cursor-pointer bg-gradient-to-b from-violet-900 to-violet-950 border-4 border-violet-800 hover:border-quiet-400/70 shadow-2xl overflow-hidden lg:col-start-3 lg:row-start-1">
+      <div id="quietCard" class="timer-card group relative flex flex-col gap-3 p-4 sm:p-6 rounded-[2rem] cursor-pointer bg-gradient-to-b from-violet-900 to-violet-950 border-4 border-violet-800 hover:border-quiet-400/70 shadow-2xl overflow-hidden lg:col-start-2 lg:row-start-1">
         <div id="quietAura" class="aura-quiet absolute inset-0 opacity-0 pointer-events-none transition-opacity duration-300"></div>
 
-        <div class="relative z-10 flex items-center gap-3">
+        <div class="tc-head relative z-10 flex items-center gap-3">
           <div id="quietMascot" class="w-12 h-12 sm:w-16 sm:h-16 shrink-0 rounded-2xl bg-quiet-500/15 border-4 border-quiet-500/40 flex items-center justify-center text-2xl sm:text-4xl shadow-inner">✨</div>
           <div class="min-w-0">
             <span class="hidden sm:block text-xs font-bold tracking-widest uppercase text-quiet-300">Calm &amp; Focus</span>
             <h2 class="text-xl sm:text-3xl xl:text-4xl font-display font-bold text-white leading-tight">Quiet Time</h2>
           </div>
         </div>
-        <div class="relative z-10 hidden sm:block">
+        <div class="tc-pill relative z-10 hidden sm:block">
           <div id="quietStatusPill" class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-sm font-bold bg-violet-800 text-slate-300 border border-violet-700 transition-all">
             <span id="quietStatusDot" class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
             <span id="quietStatusText">IDLE</span>
           </div>
         </div>
 
-        <div class="relative z-10 flex-1 flex flex-col items-center justify-center text-center py-2">
+        <div class="tc-main relative z-10 flex-1 flex flex-col items-center justify-center text-center py-2">
           <div id="quietTimeDisplay" class="timer-digits font-display numeral-display font-bold text-white select-none">00:00.0</div>
           <p class="text-sm sm:text-base text-cyan-200/90 mt-2 font-semibold" id="quietSubDetails">Nice and calm? Tap here!</p>
         </div>
 
-        <div class="relative z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs sm:text-sm font-semibold text-slate-300">
+        <div class="tc-foot relative z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs sm:text-sm font-semibold text-slate-300">
           <span>🌟 Turns: <span id="quietTurnsCount" class="text-quiet-400 font-bold">0</span></span>
           <span class="kbd-row" title="Hotkeys: L or Right Arrow"><span class="kbd">L</span><span class="kbd-sep">or</span><span class="kbd">→</span></span>
           <span id="quietShareText" class="font-display font-bold text-quiet-400 text-lg sm:text-xl">50.0%</span>
         </div>
+      </div>
+      <!-- NET TIME CARD: Quiet Time minus Loud Time (green when quiet is ahead, red when loud is) -->
+      <div id="netCard" title="Quiet Time minus Loud Time" class="stone-panel relative flex items-center justify-between gap-3 px-4 py-2 sm:px-6 rounded-[2rem] bg-gradient-to-b from-violet-900 to-violet-950 border-4 border-violet-800 shadow-2xl overflow-hidden col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-3">
+        <div class="relative z-10 min-w-0">
+          <span class="block text-xs font-bold tracking-widest uppercase text-slate-300">Quiet − Loud</span>
+          <h2 class="text-lg sm:text-2xl font-display font-bold text-white leading-tight">Difference</h2>
+        </div>
+        <div id="netTimeDisplay" class="relative z-10 timer-digits font-display numeral-display font-bold text-white select-none" aria-live="off">00:00</div>
       </div>
     </div>
 
@@ -3257,6 +3302,7 @@
       const netMs = state.quietElapsedMs - state.loudElapsedMs;
       const netSign = Math.abs(netMs) < 1000 ? 0 : Math.sign(netMs); // no sign until a whole second apart
       dom.netTimeDisplay.textContent = (netSign > 0 ? '+' : netSign < 0 ? '−' : '') + formatTime(Math.abs(netMs), false);
+      dom.netTimeDisplay.classList.toggle('long', Math.abs(netMs) >= 3600000);
       dom.netTimeDisplay.classList.toggle('text-white', netSign === 0);
       dom.netTimeDisplay.classList.toggle('text-quiet-300', netSign > 0);
       dom.netTimeDisplay.classList.toggle('text-loud-400', netSign < 0);
@@ -4719,6 +4765,9 @@
         } else if (key === 'f' && !e.metaKey && !e.ctrlKey) {
           e.preventDefault();
           toggleFullscreen();
+        } else if (key === 'h' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          toggleHeader();
         } else if (e.key === 'Escape') {
           // Esc closes an open menu first; with no menu open it leaves full screen
           // (in full screen this only works where the browser lets us catch Esc, see lockEscape)
@@ -4742,6 +4791,7 @@
       ['pointerdown', 'click', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, wakeAudio, true));
       document.addEventListener('visibilitychange', () => { if (!document.hidden && sound.ctx) wakeAudio(); });
       setupFullscreen();
+      setupHeaderToggle();
       setupGallery();
       setupMenuBackdrops();
       startTimerLoop();
@@ -5580,6 +5630,26 @@
       document.getElementById('fullscreenIcon').innerHTML = on ? FS_EXIT_ICON : FS_ENTER_ICON;
       document.getElementById('fullscreenLabel').textContent = on ? 'Exit Full Screen' : 'Full Screen';
       document.getElementById('fullscreenBtn').title = on ? 'Exit full screen (F, or Esc when no menu is open)' : 'Full screen (F)';
+    }
+
+    // HIDE THE TOP BAR: the header folds away to leave more room in a small window.
+    // "Menu" in the player bar (or the H key) brings it back; the choice is remembered.
+    function setHeaderHidden(hidden, save = true) {
+      const bar = document.getElementById('topBar');
+      const show = document.getElementById('showHeaderBtn');
+      bar.classList.toggle('hidden', hidden);
+      show.classList.toggle('hidden', !hidden);
+      show.classList.toggle('flex', hidden);
+      if (save) { try { localStorage.setItem('quietloud-topbar', hidden ? 'hidden' : 'shown'); } catch (e) {} }
+      if (typeof fitPlayField === 'function') fitPlayField();
+    }
+    const toggleHeader = () => setHeaderHidden(!document.getElementById('topBar').classList.contains('hidden'));
+    function setupHeaderToggle() {
+      document.getElementById('hideHeaderBtn').addEventListener('click', () => { setHeaderHidden(true); document.getElementById('showHeaderBtn').focus(); });
+      document.getElementById('showHeaderBtn').addEventListener('click', () => { setHeaderHidden(false); document.getElementById('hideHeaderBtn').focus(); });
+      let saved = null;
+      try { saved = localStorage.getItem('quietloud-topbar'); } catch (e) {}
+      if (saved === 'hidden') setHeaderHidden(true, false);
     }
 
     function setupFullscreen() {
