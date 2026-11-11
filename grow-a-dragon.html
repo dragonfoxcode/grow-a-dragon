@@ -2753,7 +2753,7 @@
     const DRAGON_SPECIES = {
       ice: {
         name: 'Ice Dragon', short: 'Ice', feature: 'ice',
-        colors: { body: '165 216 255', shade: '96 160 220', belly: '236 248 255', wing: '186 230 253', 'wing-dark': '56 140 200', horn: '240 249 255', cheek: '196 181 253', ink: '15 23 42' },
+        colors: { body: '190 228 255', shade: '120 172 228', belly: '240 250 255', wing: '224 242 254', 'wing-dark': '56 140 200', horn: '240 249 255', cheek: '196 181 253', ink: '15 23 42' },
         ramp: ['#e0f2fe', '#bae6fd', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0284c7', '#1d4ed8'], bolt: '#ffffff', core: '#ffffff',
         forms: [
           ['Frost Dragon', 'Frost', 'Frosty power veins sparkle across its skin!'],
@@ -2766,7 +2766,7 @@
       },
       river: {
         name: 'River Dragon', short: 'River', feature: 'river',
-        colors: { body: '45 190 200', shade: '14 130 150', belly: '204 251 241', wing: '56 130 246', 'wing-dark': '30 64 175', horn: '186 230 253', cheek: '253 164 175', ink: '8 20 40' },
+        colors: { body: '13 150 160', shade: '8 100 115', belly: '204 251 241', wing: '56 130 246', 'wing-dark': '30 64 175', horn: '186 230 253', cheek: '253 164 175', ink: '8 20 40' },
         ramp: ['#99f6e4', '#5eead4', '#2dd4bf', '#14b8a6', '#0891b2', '#0e7490', '#1e40af'], bolt: '#ccfbf1', core: '#ecfeff',
         forms: [
           ['Rapids Dragon', 'Rapids', 'Rushing water glows across its scales!'],
@@ -2779,7 +2779,7 @@
       },
       mountain: {
         name: 'Mountain Dragon', short: 'Mountain', feature: 'mountain',
-        colors: { body: '168 140 110', shade: '120 95 72', belly: '231 220 200', wing: '120 140 100', 'wing-dark': '70 85 55', horn: '250 230 180', cheek: '252 165 140', ink: '28 20 14' },
+        colors: { body: '140 132 126', shade: '96 90 86', belly: '214 208 198', wing: '120 140 100', 'wing-dark': '70 85 55', horn: '250 230 180', cheek: '252 165 140', ink: '28 20 14' },
         ramp: ['#e7e5e4', '#d6d3d1', '#fcd34d', '#f59e0b', '#b45309', '#92400e', '#78350f'], bolt: '#fde68a', core: '#fef3c7',
         forms: [
           ['Boulder Dragon', 'Boulder', 'Glowing cracks split its rocky skin!'],
@@ -2844,7 +2844,7 @@
       },
       desert: {
         name: 'Desert Dragon', short: 'Desert', feature: 'desert',
-        colors: { body: '230 190 120', shade: '190 140 80', belly: '255 240 205', wing: '214 120 60', 'wing-dark': '150 75 35', horn: '255 250 235', cheek: '255 170 130', ink: '40 25 10' },
+        colors: { body: '226 166 98', shade: '176 116 60', belly: '255 236 200', wing: '176 82 42', 'wing-dark': '112 48 24', horn: '255 250 235', cheek: '255 170 130', ink: '40 25 10' },
         ramp: ['#fef3c7', '#fde68a', '#fcd34d', '#fbbf24', '#f59e0b', '#ea580c', '#c2410c'], bolt: '#fff7ed', core: '#fffbeb',
         forms: [
           ['Dune Dragon', 'Dune', 'Shimmering sand swirls across its scales!'],
@@ -3884,7 +3884,7 @@
           <g class="dg-eyes">${eye(106)}${eye(130)}</g>
           <path d="M97 98 L112 92 M139 98 L124 92" class="dg-line" stroke-width="2.6"/>`;
         peek += `<g class="dg-tail"><path d="M200 214 C222 212 232 200 230 184" class="dg-tail-stroke" stroke-width="12"/>
-          <path class="dg-wing" d="M220 188 L230 164 L240 188 L230 183 Z"/></g>`;
+          ${tailTipArt(lookKind(sp, 0), 230, 186)}</g>`;
       }
       return `<g style="${speciesStyle(sp)}"><ellipse cx="120" cy="226" rx="96" ry="8" class="dg-ink" opacity="0.28"/>${peek}${rock}</g>`;
     }
@@ -4006,7 +4006,7 @@
       }
       // body
       if (kind === 'mountain') {
-        const rock = (x, y, r) => `<path d="M${f1(x - r)} ${f1(y + r * 0.3)} L${f1(x - r * 0.5)} ${f1(y - r * 0.8)} L${f1(x + r * 0.6)} ${f1(y - r * 0.9)} L${f1(x + r)} ${f1(y + r * 0.2)} L${f1(x + r * 0.2)} ${f1(y + r * 0.9)} Z" fill="#78716c" class="dg-outline"/>
+        const rock = (x, y, r) => `<path d="M${f1(x - r)} ${f1(y + r * 0.3)} L${f1(x - r * 0.5)} ${f1(y - r * 0.8)} L${f1(x + r * 0.6)} ${f1(y - r * 0.9)} L${f1(x + r)} ${f1(y + r * 0.2)} L${f1(x + r * 0.2)} ${f1(y + r * 0.9)} Z" fill="#57534e" class="dg-outline"/>
           <circle cx="${f1(x - r * 0.2)}" cy="${f1(y - r * 0.6)}" r="${f1(r * 0.28)}" fill="#84cc16"/>`;
         return [-1, 1].map(s => rock(120 + s * bodyRx * 0.72, bodyCy - bodyRy * 0.55, 9) + rock(120 + s * bodyRx * 0.86, bodyCy - bodyRy * 0.05, 7)).join('');
       }
@@ -4044,6 +4044,160 @@
       </g>`;
     }
 
+    /* ---------- Per-type looks ----------
+       Each dragon type gets its own body shape, wings, tail tip and belly pattern,
+       so they're easy to tell apart from across the room.
+       build: size multipliers for body width/height, head, tail length and wings. */
+    const SPECIES_BUILD = {
+      ice:       { bw: 0.94, bh: 1.05, head: 1,    tail: 1,    wing: 1.05 },
+      river:     { bw: 0.86, bh: 1.1,  head: 0.95, tail: 1.25, wing: 1 },
+      mountain:  { bw: 1.18, bh: 0.92, head: 1.06, tail: 0.8,  wing: 0.95, vein: 0.8 },
+      volcano:   { bw: 1,    bh: 1,    head: 1,    tail: 1,    wing: 1 },
+      cosmic:    { bw: 1.08, bh: 0.94, head: 1.1,  tail: 1,    wing: 1 },
+      forest:    { bw: 1.05, bh: 1,    head: 1,    tail: 1,    wing: 1 },
+      lightning: { bw: 0.88, bh: 1.06, head: 0.94, tail: 1.1,  wing: 1.08 },
+      desert:    { bw: 0.94, bh: 1,    head: 0.96, tail: 1.1,  wing: 1 },
+    };
+    const CLASSIC_WING = 'M0 0 C14 -34 44 -66 82 -80 C78 -62 80 -46 88 -32 C74 -34 62 -26 58 -14 C48 -20 36 -16 30 -4 C20 -10 8 -6 0 6 Z';
+    const CLASSIC_BONES = 'M2 0 L82 -80 M4 -4 L88 -32 M4 -2 L58 -14 M2 0 L30 -4';
+    const sparkle = (x, y, r, fill = 'white', op = 0.9) => `<path d="M${f1(x)} ${f1(y - r)} L${f1(x + r * 0.3)} ${f1(y - r * 0.3)} L${f1(x + r)} ${f1(y)} L${f1(x + r * 0.3)} ${f1(y + r * 0.3)} L${f1(x)} ${f1(y + r)} L${f1(x - r * 0.3)} ${f1(y + r * 0.3)} L${f1(x - r)} ${f1(y)} L${f1(x - r * 0.3)} ${f1(y - r * 0.3)} Z" fill="${fill}" opacity="${op}"/>`;
+
+    // Which type's look a dragon uses: its own, or for a hybrid the first parent's (which = 0) or the second's (which = 1)
+    const lookKind = (sp, which) => sp.feature || DRAGON_SPECIES[sp.parents[which]].feature;
+
+    // One wing, root at 0,0, reaching up and out to about 88,-80 (the left wing is this mirrored)
+    function wingArt(kind) {
+      const bones = (d, w = 3.5) => `<path class="dg-bone" stroke-width="${w}" d="${d}"/>`;
+      switch (kind) {
+        case 'ice': // sharp crystal wing with facets
+          return `<path class="dg-wing dg-outline" d="M0 6 L6 -20 L22 -42 L42 -60 L62 -74 L86 -86 L78 -64 L94 -52 L76 -44 L88 -28 L66 -26 L70 -12 L50 -14 L46 -2 L30 -6 L22 4 Z"/>
+            <path d="M4 0 L86 -86 M4 0 L94 -52 M4 0 L88 -28 M4 0 L70 -12 M4 0 L46 -2" stroke="white" stroke-width="2" opacity="0.8" fill="none"/>
+            <path d="M22 -42 L42 -40 L62 -74 M42 -40 L66 -26" stroke="rgb(var(--dragon-wing-dark))" stroke-width="1.6" opacity="0.6" fill="none"/>`;
+        case 'river': // smooth webbed fin with many thin rays
+          return `<path class="dg-wing dg-outline" d="M0 6 C4 -30 40 -72 82 -80 C90 -70 88 -62 94 -54 C88 -46 92 -38 88 -30 C78 -26 76 -18 68 -14 C54 -12 50 -4 40 -4 C24 -2 12 2 0 6 Z"/>
+            ${bones('M2 2 L82 -80 M2 2 L94 -54 M2 2 L88 -30 M2 2 L68 -14 M2 2 L40 -4', 2.2)}
+            <path d="M14 -10 C30 -30 50 -48 72 -60" stroke="white" stroke-width="2" opacity="0.45" fill="none" stroke-linecap="round"/>`;
+        case 'forest': // a big leaf with a center vein
+          return `<path class="dg-wing dg-outline" d="M0 6 C6 -40 46 -80 92 -84 C92 -40 58 -6 0 6 Z"/>
+            ${bones('M2 4 C30 -26 60 -56 90 -82', 3)}
+            ${bones('M24 -16 L22 -38 M40 -32 L40 -56 M58 -48 L62 -70 M28 -20 L50 -16 M46 -36 L70 -32 M64 -52 L84 -50', 2)}`;
+        case 'cosmic': // scalloped night-sky wing full of stars
+          return `<path class="dg-wing dg-outline" d="M0 6 C10 -40 46 -74 86 -82 C84 -66 92 -56 90 -44 C80 -46 74 -36 72 -28 C62 -32 54 -24 52 -16 C42 -20 32 -12 30 -4 C20 -8 8 -4 0 6 Z"/>
+            <path d="M14 -14 C30 -40 54 -60 80 -72 C80 -58 84 -50 82 -44 C60 -40 40 -28 22 -10 Z" fill="rgb(var(--dragon-ink))" opacity="0.45"/>
+            ${bones('M2 2 L86 -82 M3 0 L90 -44 M3 0 L72 -28 M3 0 L52 -16', 2.5)}
+            ${sparkle(44, -44, 4.5)}${sparkle(66, -58, 3.5)}${sparkle(30, -22, 3)}${sparkle(72, -40, 2.5)}
+            <circle cx="56" cy="-36" r="1.6" fill="white"/><circle cx="38" cy="-34" r="1.3" fill="white"/><circle cx="78" cy="-62" r="1.3" fill="white"/>`;
+        case 'lightning': // zig-zag edges like a bolt
+          return `<path class="dg-wing dg-outline" d="M0 6 L10 -24 L30 -46 L52 -62 L88 -86 L74 -58 L94 -54 L68 -34 L82 -28 L52 -14 L60 -6 L30 0 Z"/>
+            ${bones('M2 2 L88 -86 M2 2 L94 -54 M2 2 L82 -28 M2 2 L60 -6')}
+            <path d="M22 -16 L36 -30 L32 -34 L50 -48" stroke="#fde047" stroke-width="2.5" fill="none" stroke-linejoin="round" stroke-linecap="round"/>`;
+        case 'desert': // ragged moth wing with an eyespot
+          return `<path class="dg-wing dg-outline" d="M0 6 C8 -30 36 -64 76 -82 L80 -72 L90 -74 L84 -60 L94 -54 L84 -46 L90 -36 L76 -34 L72 -24 L60 -24 L56 -14 L44 -16 L36 -6 L24 -8 L14 2 Z"/>
+            ${bones('M2 0 L76 -82 M4 -4 L90 -36 M4 -2 L56 -14', 3)}
+            <circle cx="56" cy="-42" r="9" fill="rgb(var(--dragon-belly))"/><circle cx="56" cy="-42" r="5" fill="rgb(var(--dragon-wing-dark))"/><circle cx="54" cy="-44" r="1.6" fill="white"/>`;
+        case 'mountain': { // short, stubby wing covered in stone plates
+          const plate = (x, y, r) => `<path d="M${f1(x - r)} ${f1(y + r * 0.4)} L${f1(x - r * 0.4)} ${f1(y - r * 0.8)} L${f1(x + r * 0.7)} ${f1(y - r * 0.7)} L${f1(x + r)} ${f1(y + r * 0.3)} L${f1(x + r * 0.1)} ${f1(y + r * 0.9)} Z" fill="#78716c" class="dg-outline"/>`;
+          return `<path class="dg-wing dg-outline" d="M0 6 C6 -26 32 -54 66 -66 C68 -50 74 -40 76 -26 C60 -24 48 -12 42 0 C28 -2 12 2 0 6 Z"/>
+            ${bones('M2 2 L66 -66 M3 0 L76 -26 M3 0 L42 0', 3.5)}
+            ${plate(18, -18, 8)}${plate(34, -36, 9)}${plate(52, -52, 8)}${plate(40, -16, 6)}`;
+        }
+        default: // volcano: the classic bat wing
+          return `<path class="dg-wing" d="${CLASSIC_WING}"/>${bones(CLASSIC_BONES)}`;
+      }
+    }
+
+    // The tip at the end of the tail; x, y is where the tail ends
+    function tailTipArt(kind, x, y) {
+      const P = (pts) => pts.map(([dx, dy], i) => `${i ? 'L' : 'M'}${f1(x + dx)} ${f1(y + dy)}`).join(' ') + ' Z';
+      switch (kind) {
+        case 'ice': { // snowflake
+          const c = y - 10, arms = [0, 60, 120].map(a => {
+            const r = a * Math.PI / 180, dx = Math.sin(r) * 13, dy = Math.cos(r) * 13;
+            return `M${f1(x - dx)} ${f1(c - dy)} L${f1(x + dx)} ${f1(c + dy)}`;
+          }).join(' ');
+          return `<path d="${arms}" stroke="rgb(var(--dragon-wing-dark))" stroke-width="6" stroke-linecap="round"/>
+            <path d="${arms}" stroke="#f0f9ff" stroke-width="3" stroke-linecap="round"/><circle cx="${f1(x)}" cy="${f1(c)}" r="3.5" fill="#f0f9ff"/>`;
+        }
+        case 'river': // forked fish fin
+          return `<path class="dg-wing dg-outline" d="M${f1(x - 3)} ${f1(y + 5)} C${f1(x - 10)} ${f1(y - 4)} ${f1(x - 18)} ${f1(y - 12)} ${f1(x - 18)} ${f1(y - 22)} C${f1(x - 8)} ${f1(y - 16)} ${f1(x - 2)} ${f1(y - 14)} ${f1(x)} ${f1(y - 8)} C${f1(x + 2)} ${f1(y - 14)} ${f1(x + 8)} ${f1(y - 16)} ${f1(x + 18)} ${f1(y - 22)} C${f1(x + 18)} ${f1(y - 12)} ${f1(x + 10)} ${f1(y - 4)} ${f1(x + 3)} ${f1(y + 5)} Z"/>`;
+        case 'forest': // a leaf
+          return `<path class="dg-wing dg-outline" d="M${f1(x)} ${f1(y + 4)} C${f1(x - 14)} ${f1(y - 4)} ${f1(x - 10)} ${f1(y - 20)} ${f1(x + 2)} ${f1(y - 28)} C${f1(x + 12)} ${f1(y - 18)} ${f1(x + 12)} ${f1(y - 4)} ${f1(x)} ${f1(y + 4)} Z"/>
+            <path d="M${f1(x)} ${f1(y + 2)} Q${f1(x + 1)} ${f1(y - 12)} ${f1(x + 2)} ${f1(y - 24)}" stroke="rgb(var(--dragon-wing-dark))" stroke-width="1.8" fill="none"/>`;
+        case 'cosmic': { // five-point star
+          const pts = [];
+          for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 6 : 15; pts.push([Math.cos(a) * r, -10 + Math.sin(a) * r]); }
+          return `<path class="dg-horn dg-outline" d="${P(pts)}"/>`;
+        }
+        case 'lightning': // lightning bolt
+          return `<path fill="#ffffff" class="dg-outline" d="${P([[-4, 4], [-10, -10], [-2, -10], [-8, -26], [10, -6], [2, -6], [6, 4]])}"/>`;
+        case 'desert': // curled scorpion stinger
+          return `<path class="dg-wing-dark" d="M${f1(x - 6)} ${f1(y + 4)} C${f1(x - 12)} ${f1(y - 12)} ${f1(x - 4)} ${f1(y - 24)} ${f1(x + 10)} ${f1(y - 24)} C${f1(x + 4)} ${f1(y - 19)} ${f1(x + 1)} ${f1(y - 14)} ${f1(x + 3)} ${f1(y - 8)} C${f1(x + 5)} ${f1(y - 2)} ${f1(x + 5)} ${f1(y + 3)} ${f1(x + 3)} ${f1(y + 6)} Z"/>
+            <circle cx="${f1(x)}" cy="${f1(y - 2)}" r="6" class="dg-wing"/>`;
+        case 'mountain': // rock club
+          return `<path fill="#78716c" class="dg-outline" d="${P([[-13, 0], [-9, -14], [2, -19], [13, -11], [12, 3], [2, 8], [-8, 7]])}"/>
+            <path d="M${f1(x - 6)} ${f1(y - 10)} L${f1(x + 2)} ${f1(y - 14)}" stroke="#a8a29e" stroke-width="2.5" stroke-linecap="round"/>`;
+        default: { // volcano: flame
+          const fl = (w, h, fill) => `<path fill="${fill}" d="M${f1(x - w)} ${f1(y + 5)} C${f1(x - w * 1.3)} ${f1(y - h * 0.3)} ${f1(x - w * 0.3)} ${f1(y - h * 0.5)} ${f1(x)} ${f1(y - h)} C${f1(x + w * 0.3)} ${f1(y - h * 0.5)} ${f1(x + w * 1.3)} ${f1(y - h * 0.3)} ${f1(x + w)} ${f1(y + 5)} Z"/>`;
+          return fl(11, 26, '#f97316') + fl(6, 16, '#fde047');
+        }
+      }
+    }
+
+    // Belly pattern drawn on the belly oval (cx 120, cy, rx, ry). Volcano keeps the classic stripes.
+    function bellyArt(kind, cy, rx, ry) {
+      const ink = 'rgb(var(--dragon-shade))';
+      const rows = (n, fn) => Array.from({ length: n }, (_, i) => fn(-0.6 + (1.2 * i) / (n - 1))).join('');
+      const halfW = (o) => rx * Math.sqrt(Math.max(0, 1 - o * o));
+      switch (kind) {
+        case 'river': // fish scales: rows of little U shapes
+          return rows(4, (o) => {
+            const y = cy + o * ry, w = halfW(o) * 0.8, n = Math.max(2, Math.round(w / 8)), step = (2 * w) / n;
+            let s = '';
+            for (let i = 0; i < n; i++) { const x = 120 - w + step * (i + 0.5); s += `<path d="M${f1(x - step / 2)} ${f1(y)} Q${f1(x)} ${f1(y + step * 0.8)} ${f1(x + step / 2)} ${f1(y)}" stroke="${ink}" stroke-width="2" fill="none" opacity="0.5"/>`; }
+            return s;
+          });
+        case 'mountain': { // stone plates (a brick pattern)
+          let s = rows(4, (o) => { const y = cy + o * ry, w = halfW(o) * 0.9; return `<path d="M${f1(120 - w)} ${f1(y)} L${f1(120 + w)} ${f1(y)}" stroke="${ink}" stroke-width="2.5" opacity="0.5"/>`; });
+          [-0.6, -0.2, 0.2].forEach((o, i) => {
+            const y0 = cy + o * ry, y1 = cy + (o + 0.4) * ry, xs = i % 2 ? [-0.25, 0.25] : [-0.45, 0, 0.45];
+            xs.forEach(xf => { s += `<path d="M${f1(120 + xf * rx)} ${f1(y0)} L${f1(120 + xf * rx)} ${f1(y1)}" stroke="${ink}" stroke-width="2.5" opacity="0.5"/>`; });
+          });
+          return s;
+        }
+        case 'ice': // frost swirls and sparkles
+          return `<g stroke="white" stroke-width="2.4" fill="none" stroke-linecap="round" opacity="0.95">
+              <path d="M${f1(120 - rx * 0.5)} ${f1(cy - ry * 0.3)} c6 -8 16 -4 12 4 c-3 5 -9 3 -7 -1"/>
+              <path d="M${f1(120 + rx * 0.15)} ${f1(cy + ry * 0.25)} c6 -8 16 -4 12 4 c-3 5 -9 3 -7 -1"/>
+            </g><g stroke="${ink}" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.55">
+              <path d="M${f1(120 - rx * 0.55)} ${f1(cy + ry * 0.35)} q8 -6 16 0 q8 6 16 0"/>
+              <path d="M${f1(120 + rx * 0.05)} ${f1(cy - ry * 0.45)} q8 -6 16 0 q8 6 16 0"/>
+            </g>${sparkle(120 + rx * 0.4, cy - ry * 0.05, 4, 'rgb(var(--dragon-wing-dark))', 0.6)}${sparkle(120 - rx * 0.15, cy + ry * 0.6, 3, 'rgb(var(--dragon-wing-dark))', 0.6)}`;
+        case 'forest': // moss spots
+          return [[-0.45, -0.35, 0.18], [0.3, -0.5, 0.12], [0.1, 0.05, 0.2], [-0.35, 0.4, 0.13], [0.45, 0.35, 0.15], [-0.05, -0.6, 0.08]]
+            .map(([xf, yf, rf]) => `<circle cx="${f1(120 + xf * rx)}" cy="${f1(cy + yf * ry)}" r="${f1(rf * rx)}" class="dg-wing" opacity="0.8"/>`).join('');
+        case 'cosmic': // a little starfield
+          return `<ellipse cx="120" cy="${f1(cy)}" rx="${f1(rx * 0.72)}" ry="${f1(ry * 0.72)}" fill="rgb(var(--dragon-ink))" opacity="0.55"/>
+            ${sparkle(120 - rx * 0.3, cy - ry * 0.3, 4.5)}${sparkle(120 + rx * 0.3, cy + ry * 0.1, 3.5)}${sparkle(120 - rx * 0.1, cy + ry * 0.45, 3)}
+            <circle cx="${f1(120 + rx * 0.2)}" cy="${f1(cy - ry * 0.45)}" r="1.5" fill="white"/><circle cx="${f1(120 - rx * 0.45)}" cy="${f1(cy + ry * 0.15)}" r="1.3" fill="white"/><circle cx="${f1(120 + rx * 0.45)}" cy="${f1(cy - ry * 0.1)}" r="1.2" fill="white"/><circle cx="${f1(120 + rx * 0.05)}" cy="${f1(cy + ry * 0.1)}" r="1.1" fill="white"/>`;
+        case 'lightning': // zig-zag stripes
+          return rows(3, (o) => {
+            const y = cy + o * ry * 0.85, w = halfW(o * 0.85) * 0.85, n = 6;
+            const pts = Array.from({ length: n + 1 }, (_, i) => `${i ? 'L' : 'M'}${f1(120 - w + (2 * w * i) / n)} ${f1(y + (i % 2 ? -5 : 4))}`).join(' ');
+            return `<path d="${pts}" stroke="${ink}" stroke-width="3" fill="none" stroke-linejoin="round" stroke-linecap="round" opacity="0.6"/>`;
+          });
+        case 'desert': // a row of diamonds, like a desert snake
+          return [-0.6, -0.2, 0.2, 0.6].map(o => {
+            const y = cy + o * ry, d = ry * 0.16, w = rx * 0.22;
+            return `<path d="M120 ${f1(y - d)} L${f1(120 + w)} ${f1(y)} L120 ${f1(y + d)} L${f1(120 - w)} ${f1(y)} Z" class="dg-wing" opacity="0.7"/>`;
+          }).join('') + [-1, 1].map(s => `<path d="M${f1(120 + s * rx * 0.55)} ${f1(cy - ry * 0.5)} L${f1(120 + s * rx * 0.65)} ${f1(cy)} L${f1(120 + s * rx * 0.55)} ${f1(cy + ry * 0.5)}" stroke="${ink}" stroke-width="2" fill="none" opacity="0.45" stroke-dasharray="4 5"/>`).join('');
+        default: // volcano: classic curved stripes
+          return [-0.4, 0, 0.4].map(o => {
+            const y = cy + o * ry, w = halfW(o) * 0.85;
+            return `<path d="M${f1(120 - w)} ${f1(y)} Q120 ${f1(y + 5)} ${f1(120 + w)} ${f1(y)}" stroke="${ink}" stroke-width="2.5" fill="none" opacity="0.45" stroke-linecap="round"/>`;
+          }).join('');
+      }
+    }
+
     function dragonArt(level, stars = 0, sp = DRAGON_SPECIES.volcano, crown = false) {
       const shadow = (rx) => `<ellipse cx="120" cy="224" rx="${rx}" ry="8" class="dg-ink" opacity="0.28"/>`;
 
@@ -4068,7 +4222,13 @@
         return shadow(48) + atFeet(0.72, `<g class="dg-egg-rock">${head}${bottom}${cap}</g>`) + zzz(150, 100);
       }
 
-      const p = DRAGON_FORMS[level];
+      // Each type stretches or squashes the shared body shape
+      // Hybrids take the body shape, belly and tail tip from the first parent and the wings from the second
+      const bodyKind = lookKind(sp, 0), wingKind = lookKind(sp, 1);
+      const base = DRAGON_FORMS[level], b = SPECIES_BUILD[bodyKind] || {}, wb = SPECIES_BUILD[wingKind] || {};
+      const p = { ...base, bodyRx: base.bodyRx * (b.bw || 1), bodyRy: base.bodyRy * (b.bh || 1),
+        headRx: base.headRx * (b.head || 1), headRy: base.headRy * (b.head || 1),
+        tail: base.tail * (b.tail || 1), wing: base.wing * (wb.wing || 1) };
       const bodyCy = 214 - p.bodyRy;
       const bodyTop = bodyCy - p.bodyRy;
       const headCy = bodyTop - p.headRy * 0.45;
@@ -4099,7 +4259,7 @@
       const tex = f1(tx0 + 62 * t), tey = f1(172 - 12 * t);
       parts += `<g class="dg-tail">
         <path d="M${f1(tx0)} 206 C${f1(tx0 + 44 * t)} 216 ${f1(tx0 + 74 * t)} 204 ${tex} ${tey}" class="dg-tail-stroke" stroke-width="${f1(p.bodyRx * 0.42)}"/>
-        <path class="dg-wing" d="M${f1(tex - 11)} ${f1(tey + 6)} L${tex} ${f1(tey - 18)} L${f1(tex + 11)} ${f1(tey + 6)} L${tex} ${f1(tey + 1)} Z"/>
+        ${tailTipArt(bodyKind, tex, tey)}
       </g>`;
 
       // Wings (left is the right one mirrored)
@@ -4108,9 +4268,8 @@
         const sx = 120 + s * p.bodyRx * 0.45;
         const wing = p.wing * (1 + power * 0.06); // wings grow with each star past 3
         parts += `<g transform="translate(${f1(sx)} ${f1(sy)}) scale(${f1(s * wing * 100) / 100} ${f1(wing * 100) / 100})"><g class="dg-wing-flap">
-          <path class="dg-wing" d="M0 0 C14 -34 44 -66 82 -80 C78 -62 80 -46 88 -32 C74 -34 62 -26 58 -14 C48 -20 36 -16 30 -4 C20 -10 8 -6 0 6 Z"/>
-          <path class="dg-bone" stroke-width="3.5" d="M2 0 L82 -80 M4 -4 L88 -32 M4 -2 L58 -14 M2 0 L30 -4"/>
-          ${stars >= 2 ? glowVein('M14 -14 L30 -26 L36 -22 L52 -44 L60 -42 L70 -62 M36 -22 L50 -24 L62 -20 M52 -44 L66 -40', 3.5, veinColor) : ''}
+          ${wingArt(wingKind)}
+          ${stars >= 2 ? `<g transform="scale(${wb.vein || 1})">${glowVein('M14 -14 L30 -26 L36 -22 L52 -44 L60 -42 L70 -62 M36 -22 L50 -24 L62 -20 M52 -44 L66 -40', 3.5, veinColor)}</g>` : ''}
         </g></g>`;
       });
 
@@ -4141,10 +4300,7 @@
         <ellipse cx="120" cy="${f1(bodyCy)}" rx="${p.bodyRx}" ry="${p.bodyRy}" class="dg-body"/>`;
       const bcy = bodyCy + p.bodyRy * 0.12, brx = p.bodyRx * 0.6, bry = p.bodyRy * 0.75;
       parts += `<ellipse cx="120" cy="${f1(bcy)}" rx="${f1(brx)}" ry="${f1(bry)}" class="dg-belly"/>`;
-      [-0.4, 0, 0.4].forEach(o => {
-        const y = bcy + o * bry, w = brx * Math.sqrt(1 - o * o) * 0.85;
-        parts += `<path d="M${f1(120 - w)} ${f1(y)} Q120 ${f1(y + 5)} ${f1(120 + w)} ${f1(y)}" stroke="rgb(var(--dragon-shade))" stroke-width="2.5" fill="none" opacity="0.45" stroke-linecap="round"/>`;
-      });
+      parts += bellyArt(bodyKind, bcy, brx, bry);
       (sp.features || [sp.feature]).forEach(f => { parts += speciesFeature(f, geo, 'body'); });
       // Star 2+: glowing veins and cracks across the skin
       if (stars >= 2) {
