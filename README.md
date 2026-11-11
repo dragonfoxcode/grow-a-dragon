@@ -6,6 +6,8 @@ are also levels that started as stars but evolved into a little baby dragon egg
 that hatches and grows with every 5 minute increment of quiet time. Maybe this
 will be helpful for you!
 
+Grow a Dragon is built on the [Classroom Timer Template](https://github.com/dowagercode/classroom-timer-template).
+
 Enjoy,
 
 ~Grow a Dragon

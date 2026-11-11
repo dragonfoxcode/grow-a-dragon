@@ -11,15 +11,17 @@
       icon: '🐉',
       chipBefore: 'micToggleBtn',
       freshText: 'a new egg, an empty Dragon Gallery and an empty Classes Log',
-      deleteText: 'classes, dragons, Dragon Gallery, settings and Classes Log',
+      deleteText: 'dragon, Dragon Gallery, settings and Classes Log',
       // Saves from before profiles existed
       isLegacyKey: (k) => !!k && k !== 'quietloud-profiles' && k.startsWith('quietloud-'),
+      soloKey: 'main', // the one dragon / gallery key inside each profile (the game uses the same)
       summary: (read) => {
         const parts = [];
-        const n = Object.keys(JSON.parse(read('quietloud-classes') || '{}')).length;
-        if (n) parts.push(`${n} class${n === 1 ? '' : 'es'}`);
+        const me = (JSON.parse(read('quietloud-classes') || '{}') || {}).main;
+        const queens = ((JSON.parse(read('quietloud-gallery') || '{}') || {}).main || []).length;
+        if (me && me.dragon) parts.push(me.dragon.dragonLevel > 0 ? `Dragon Lv ${me.dragon.dragonLevel}` : 'Dragon egg');
+        if (queens) parts.push(`${queens} Queen${queens === 1 ? '' : 's'}`);
         const s = JSON.parse(read('quietloud-session') || 'null');
-        if (s && s.cls) parts.push(s.cls);
         if (s && (s.quietElapsedMs + s.loudElapsedMs) >= 1000) parts.push(`paused at ${Math.floor((s.quietElapsedMs + s.loudElapsedMs) / 60000)} min`);
         return parts.join(' · ');
       },
@@ -73,13 +75,104 @@
         reg = { list: [], current: '' };
         const legacy = allRawKeys().filter(CFG.isLegacyKey);
         if (legacy.length) {
-          const p = { id: newId(), name: 'Player 1', avatar: AVATARS[0], created: Date.now(), lastPlayed: Date.now() };
+          const p = { id: newId(), name: 'Player 1', avatar: AVATARS[0], created: Date.now(), lastPlayed: Date.now() }; // (migrated to v2 just below)
           legacy.forEach(k => rawSet(nsOf(p.id) + k, rawGet(k))); // copied, so the old save stays as a backup
           reg.list.push(p);
           reg.current = p.id;
         }
         saveRegistry();
       }
+
+      /* ---------- One-time migration (registry v2) ----------
+         Before v2 a player could hold several named classes (their own dragon, gallery,
+         log entries). Now one profile = one dragon. The "home" class (last used) stays in
+         its profile under SOLO; every other class becomes a profile of its own. */
+      const SOLO = CFG.soloKey;
+      const MAX_NAME = 40;
+      function uniqueName(name, selfId) {
+        name = String(name).trim().slice(0, MAX_NAME) || 'My class';
+        const taken = (n) => reg.list.some(p => p.id !== selfId && p.name.toLowerCase() === n.toLowerCase());
+        if (!taken(name)) return name;
+        for (let i = 2; ; i++) {
+          const suffix = ` (${i})`;
+          const n = name.slice(0, MAX_NAME - suffix.length) + suffix;
+          if (!taken(n)) return n;
+        }
+      }
+      function migrateProfile(p) {
+        const ns = nsOf(p.id);
+        const strict = (k, fallback, kind) => { // missing = fallback; unreadable = throw (profile left alone)
+          const t = rawGet(ns + k);
+          if (t === null || t === undefined) return fallback;
+          const v = JSON.parse(t);
+          if (kind === 'array' ? !Array.isArray(v) : (!v || typeof v !== 'object' || Array.isArray(v))) throw new Error('bad ' + k);
+          return v;
+        };
+        const classes = strict('quietloud-classes', {}, 'object');
+        const gallery = strict('quietloud-gallery', {}, 'object');
+        const names = [...new Set([...Object.keys(classes), ...Object.keys(gallery)])];
+        const lastClass = rawGet(ns + 'quietloud-last-class');
+        if (!names.length) { rawRemove(ns + 'quietloud-last-class'); return []; }
+        const logs = strict('quietloud-logs', [], 'array');
+        const sessionText = rawGet(ns + 'quietloud-session');
+        const session = sessionText ? strict('quietloud-session', null, 'object') : null;
+
+        const updatedOf = (n) => (classes[n] && Number(classes[n].updated)) || 0;
+        const home = names.includes(lastClass) ? lastClass
+          : names.slice().sort((a, b) => updatedOf(b) - updatedOf(a))[0];
+        const others = names.filter(n => n !== home);
+        const dataKeys = ['quietloud-classes', 'quietloud-gallery', 'quietloud-logs', 'quietloud-session', 'quietloud-last-class'];
+        const backup = {}; dataKeys.forEach(k => { backup[k] = rawGet(ns + k); });
+        const put = (k, v) => raw.set.call(LS, k, v); // throws if storage is full
+        const created = [];
+        const logsFor = (n) => logs.filter(l => l && l.className === n);
+        try {
+          const settings = ['quietloud-theme', 'quietloud-appearance', 'quietloud-silence', 'quietloud-dragon'];
+          others.forEach((n, i) => {
+            const t = updatedOf(n) || Date.now();
+            const c = { id: newId() + i, name: '', avatar: AVATARS[(reg.list.length + created.length) % AVATARS.length], created: t, lastPlayed: t, v: 2 };
+            c.name = uniqueName(n, c.id);
+            const cns = nsOf(c.id);
+            created.push(c);
+            reg.list.push(c); // (so the next name check sees it; undone below on failure)
+            settings.forEach(k => { const v = rawGet(ns + k); if (v !== null && v !== undefined) put(cns + k, v); });
+            if (classes[n]) put(cns + 'quietloud-classes', JSON.stringify({ [SOLO]: classes[n] }));
+            if (gallery[n]) put(cns + 'quietloud-gallery', JSON.stringify({ [SOLO]: gallery[n] }));
+            const own = logsFor(n);
+            if (own.length) put(cns + 'quietloud-logs', JSON.stringify(own));
+            if (session && session.cls === n && home !== n) put(cns + 'quietloud-session', JSON.stringify({ ...session, cls: SOLO }));
+          });
+          // New data is safely written: now rewrite the parent
+          const moved = new Set(others);
+          if (classes[home]) put(ns + 'quietloud-classes', JSON.stringify({ [SOLO]: classes[home] })); else rawRemove(ns + 'quietloud-classes');
+          if (gallery[home]) put(ns + 'quietloud-gallery', JSON.stringify({ [SOLO]: gallery[home] })); else rawRemove(ns + 'quietloud-gallery');
+          if (others.length) {
+            const keep = logs.filter(l => !(l && moved.has(l.className)));
+            if (keep.length) put(ns + 'quietloud-logs', JSON.stringify(keep)); else rawRemove(ns + 'quietloud-logs');
+          }
+          if (session && session.cls === home) put(ns + 'quietloud-session', JSON.stringify({ ...session, cls: SOLO }));
+          else if (session) rawRemove(ns + 'quietloud-session'); // belonged to a class that now has its own profile (or none)
+          if (/^Player \d+$/.test(p.name)) p.name = uniqueName(home, p.id);
+          rawRemove(ns + 'quietloud-last-class');
+        } catch (err) {
+          // Undo: never lose what we could not copy
+          created.forEach(c => { removeNamespace(nsOf(c.id)); const i = reg.list.indexOf(c); if (i >= 0) reg.list.splice(i, 1); });
+          dataKeys.forEach(k => { try { if (backup[k] === null) rawRemove(ns + k); else raw.set.call(LS, ns + k, backup[k]); } catch (e) {} });
+          throw err;
+        }
+        return created;
+      }
+      function migrateToV2() {
+        let ok = true;
+        reg.list.slice().forEach(p => {
+          if (p.v === 2) return;
+          try { migrateProfile(p); p.v = 2; } catch (e) { ok = false; console.warn('Profile migration skipped for', p.name, e); }
+        });
+        if (ok) reg.v = 2;
+        saveRegistry();
+      }
+      if (reg.v !== 2) migrateToV2();
+
       if (!reg.list.some(p => p.id === reg.current)) reg.current = reg.list.length ? reg.list[0].id : '';
 
       // The player this page was opened with (switching players reloads the page)
@@ -161,7 +254,7 @@
             <form class="mt-6 bg-violet-900 border border-violet-700 rounded-2xl p-5 space-y-5" autocomplete="off">
               <label class="block">
                 <span class="text-xs uppercase font-bold tracking-wider text-pink-300">Name</span>
-                <input name="profileName" maxlength="20" required value="${p ? esc(p.name) : ''}" placeholder="e.g. Ms. Lee's class, Sam, Room 12"
+                <input name="profileName" maxlength="40" required value="${p ? esc(p.name) : ''}" placeholder="e.g. 5th Grade Science, Period 3"
                   class="mt-1.5 w-full bg-violet-950 border border-violet-700 rounded-xl px-3 py-2.5 text-white font-semibold focus:outline-none focus:border-pink-400">
               </label>
               <div>
@@ -186,7 +279,7 @@
               <button type="button" data-pick="${p.id}" class="w-full h-full text-left flex items-center gap-4 p-4 rounded-2xl border-2 transition bg-violet-900 border-violet-700 hover:border-pink-400 hover:bg-violet-800 focus:outline-none focus:border-pink-400">
                 <span class="text-4xl sm:text-5xl leading-none" aria-hidden="true">${esc(p.avatar)}</span>
                 <span class="min-w-0 pr-14">
-                  <span class="block text-lg font-display font-bold text-white truncate">${esc(p.name)}</span>
+                  <span class="block text-lg font-display font-bold text-white truncate" title="${esc(p.name)}">${esc(p.name)}</span>
                   ${summary ? `<span class="block text-sm text-pink-300 font-semibold">${esc(summary)}</span>` : ''}
                   <span class="block text-xs text-slate-400 mt-0.5">${ago(p.lastPlayed)}</span>
                 </span>
@@ -228,7 +321,7 @@
 
       function onPickerSubmit(e) {
         e.preventDefault();
-        const name = (overlay.querySelector('input[name="profileName"]').value || '').trim().slice(0, 20);
+        const name = (overlay.querySelector('input[name="profileName"]').value || '').trim().slice(0, 40);
         if (!name) return;
         if (editing && editing.id) {
           const p = reg.list.find(x => x.id === editing.id);
@@ -239,7 +332,7 @@
           renderChip();
           return;
         }
-        const p = { id: newId(), name, avatar: pickedAvatar, created: Date.now(), lastPlayed: Date.now() };
+        const p = { id: newId(), name, avatar: pickedAvatar, created: Date.now(), lastPlayed: Date.now(), v: 2 };
         reg.list.push(p);
         saveRegistry();
         editing = null;
@@ -286,6 +379,13 @@
           ? `<span class="text-base leading-none" aria-hidden="true">${esc(p.avatar)}</span><span class="hidden sm:inline max-w-[8rem] truncate">${esc(p.name)}</span>`
           : `<span class="text-base leading-none" aria-hidden="true">👤</span><span class="hidden sm:inline">Players</span>`;
         chip.title = p ? `Playing as ${p.name}. Click to switch players.` : 'Pick a player';
+        // The name shown at the top of the page, beside "Save Current Session to Log"
+        const bar = document.getElementById('profileBarBtn');
+        if (bar) {
+          bar.querySelector('[data-bar-avatar]').textContent = p ? p.avatar : CFG.icon;
+          bar.querySelector('[data-bar-name]').textContent = p ? p.name : 'My class';
+          bar.title = p ? `Playing as ${p.name}. Click to switch players.` : 'Pick a player';
+        }
       }
       function addChip() {
         const anchor = document.getElementById(CFG.chipBefore);
@@ -296,11 +396,14 @@
         chip.className = 'flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-750 text-white border border-violet-700 transition';
         anchor.parentNode.insertBefore(chip, anchor);
         renderChip();
-        chip.addEventListener('click', () => {
+        const askToSwitch = () => {
           if (CFG.isRunning && CFG.isRunning() && !confirm('Switch players? The clock will pause, and this player\'s place is saved.')) return;
           try { sessionStorage.removeItem(CHOSEN_KEY); } catch (e) {}
           location.reload(); // the game saves on the way out; the picker opens on the way in
-        });
+        };
+        chip.addEventListener('click', askToSwitch);
+        const bar = document.getElementById('profileBarBtn');
+        if (bar) bar.addEventListener('click', askToSwitch);
       }
 
       document.addEventListener('DOMContentLoaded', () => {
@@ -309,20 +412,35 @@
         if (!alreadyPicked) openPicker();
       });
 
-      window.playerProfiles = { open: openPicker, current: () => loaded && { ...loaded } };
+      window.playerProfiles = {
+        open: openPicker,
+        current: () => loaded && { ...loaded },
+        list: () => reg.list.map(p => ({ id: p.id, name: p.name, avatar: p.avatar })),
+        read: (id, key) => rawGet(nsOf(id) + key), // another player's saved value (raw text)
+      };
     })();
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Google Fonts: Fredoka (playful/rounded numbers without dotted zeros) & Outfit -->
+  <!-- Google Fonts: Cinzel (carved-stone headings), Fredoka (round clock digits without dotted zeros) & Outfit (body text) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Fredoka:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script>
     /* ==========================================================================
        COLOR THEMES — each color is an "R G B" triplet.
        base = backgrounds, loud = Loud Time, quiet = Quiet Time, accent = buttons/highlights
        ========================================================================== */
     const THEMES = {
+      dungeon: {
+        name: 'Dungeon', mascots: ['🔥', '🕯️'],
+        // Warm hewn stone, torch-ember Loud Time, verdigris Quiet Time, bronze/gold accents
+        base:   { 950: '15 12 10', 900: '26 22 18', 850: '37 32 27', 800: '49 42 35', 750: '62 54 45', 700: '82 70 55', 600: '122 106 84', 500: '152 134 108' },
+        loud:   { 300: '253 190 140', 400: '248 135 72', 500: '236 92 30', 600: '196 66 14' },
+        quiet:  { 200: '190 240 222', 300: '138 226 197', 400: '72 202 168', 500: '34 172 142', 600: '22 132 112' },
+        accent: { 300: '246 216 134', 400: '236 190 84', 500: '218 162 44', 600: '176 124 26', 950: '58 38 10' },
+        // Light mode: pale limestone instead of the automatic tint of the dark stone
+        light:  { base: { 950: '248 242 229', 900: '242 233 214', 850: '235 224 201', 800: '225 212 186', 750: '211 196 167', 700: '189 172 141', 600: '148 130 100', 500: '120 104 80' } },
+      },
       galaxy: {
         name: 'Galaxy', mascots: ['📢', '✨'],
         base:   { 950: '12 7 30', 900: '20 12 46', 850: '26 16 60', 800: '35 21 79', 750: '43 26 96', 700: '52 31 114', 600: '124 58 237', 500: '139 92 246' },
@@ -378,6 +496,7 @@
     function lightPalette(theme) {
       const base = {};
       Object.entries(LIGHT_BASE_MIX).forEach(([shade, t]) => { base[shade] = mixWhite(theme.base[700], t); });
+      if (theme.light && theme.light.base) Object.assign(base, theme.light.base); // a theme can hand-pick its light stone
 
       // Pale tints (200–400) read poorly on white, so use deeper versions of the theme colors
       const deepen = (c) => {
@@ -396,7 +515,7 @@
     }
 
     function applyThemeColors(key, appearancePref = 'auto') {
-      const theme = THEMES[key] || THEMES.galaxy;
+      const theme = THEMES[key] || THEMES.dungeon;
       const mode = resolveAppearance(appearancePref);
       const colors = mode === 'light' ? lightPalette(theme) : theme;
       const root = document.documentElement;
@@ -413,15 +532,15 @@
       Object.entries(dragon).forEach(([k, rgb]) => root.style.setProperty(`--dragon-${k}`, rgb));
       root.classList.toggle('light', mode === 'light');
       root.style.colorScheme = mode;
-      root.dataset.theme = THEMES[key] ? key : 'galaxy';
+      root.dataset.theme = THEMES[key] ? key : 'dungeon';
       root.dataset.appearance = appearancePref;
     }
 
     // Apply the saved theme and appearance before the page draws, so there's no color flash
-    let savedTheme = 'galaxy';
+    let savedTheme = 'dungeon';
     let savedAppearance = 'auto';
     try {
-      savedTheme = localStorage.getItem('quietloud-theme') || 'galaxy';
+      savedTheme = localStorage.getItem('quietloud-theme') || 'dungeon';
       savedAppearance = localStorage.getItem('quietloud-appearance') || 'auto';
     } catch (e) {}
     applyThemeColors(savedTheme, savedAppearance);
@@ -699,6 +818,434 @@
     @media (prefers-reduced-motion: reduce) {
       .dg-breathe, .dg-wing-flap, .dg-tail, .dg-egg-rock, .dg-aura, .dg-crest, .dg-bolt, .dg-vein, .dragon-wrap.is-loud, .scene-star, .scene-snow, .scene-ember, .scene-firefly, .scene-rain, .scene-sand, .scene-flash, .scene-skyflash, .scene-aurora, .scene-shimmer, .scene-shoot, .scene-glow { animation: none !important; }
     }
+
+    /* STONE-LAYER:START */
+    /* ==========================================================================
+       STONE KEEP: carved-stone, dungeon-fantasy shell
+       A purely visual layer. Everything is keyed off existing ids/classes (plus a few
+       semantic ones: .crest .trough .stone-panel .parchment .no-plate), so the JS that
+       swaps class strings keeps working. Textures and bevels are structural; every tint
+       comes from the theme variables (--base-*, --loud-*, --quiet-*, --accent-*), so each
+       theme and both appearances stay intentional.
+       Headings: Cinzel (carved serif). Clock digits stay Fredoka. Body stays Outfit.
+       ========================================================================== */
+    :root {
+      --f-head: "Cinzel", "Trajan Pro", Georgia, serif;
+      /* chisel light/shade strength: dark stone takes a soft highlight, pale stone a strong one */
+      --hi-a: 0.16; --lo-a: 0.38; --drop-a: 0.38; --text-edge: rgb(0 0 0 / 0.5);
+      --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='d' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix color-interpolation-filters='sRGB' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.0 0 0 0 0.42'/%3E%3C/filter%3E%3Cfilter id='l' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix color-interpolation-filters='sRGB' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1.0 0 0 0 -0.58'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23d)' opacity='1'/%3E%3Crect width='100%25' height='100%25' filter='url(%23l)' opacity='0.6'/%3E%3C/svg%3E");
+      --mottle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Cfilter id='d' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.02' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix color-interpolation-filters='sRGB' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -3.0 0 0 0 1.32'/%3E%3C/filter%3E%3Cfilter id='l' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.02' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix color-interpolation-filters='sRGB' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 3.0 0 0 0 -1.62'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23d)' opacity='0.34'/%3E%3Crect width='100%25' height='100%25' filter='url(%23l)' opacity='0.05'/%3E%3C/svg%3E");
+      --tex: var(--grain), var(--mottle);
+      --wall: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='128'%3E%3Crect x='0' y='0' width='128' height='64' fill='rgba(255,255,255,0.02)'/%3E%3Crect x='128' y='0' width='128' height='64' fill='rgba(0,0,0,0.07)'/%3E%3Crect x='-64' y='64' width='128' height='64' fill='rgba(255,255,255,0.008)'/%3E%3Crect x='64' y='64' width='128' height='64' fill='rgba(0,0,0,0.11)'/%3E%3Crect x='192' y='64' width='128' height='64' fill='rgba(255,255,255,0.03)'/%3E%3Cpath d='M0 0H256M0 64H256M0 128H256M0 0V64M128 0V64M256 0V64M64 64V128M192 64V128' stroke='rgba(0,0,0,0.5)' stroke-width='4' fill='none'/%3E%3Cpath d='M0 3H256M0 67H256M2 0V64M130 0V64M66 64V128M194 64V128' stroke='rgba(255,255,255,0.045)' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+      --bv: inset 0 2px 0 rgb(255 255 255 / var(--hi-a)), inset 0 -3px 0 rgb(0 0 0 / var(--lo-a));
+      --drop: 0 5px 0 rgb(0 0 0 / var(--drop-a)), 0 14px 26px -6px rgb(0 0 0 / var(--drop-a));
+      --iron-hi: #d9d1c3; --iron: #8f877a; --iron-lo: #28231f;
+      --parch-1: #f0e1b6; --parch-2: #dcc590; --parch-ink: #2b1a0a; --parch-ink-2: #6a4a22; --parch-edge: #8a5e22;
+    }
+    html.light {
+      --hi-a: 0.6; --lo-a: 0.2; --drop-a: 0.2; --text-edge: rgb(255 255 255 / 0.55);
+      --wall: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='128'%3E%3Crect x='0' y='0' width='128' height='64' fill='rgba(255,255,255,0.12)'/%3E%3Crect x='128' y='0' width='128' height='64' fill='rgba(120,90,50,0.1)'/%3E%3Crect x='-64' y='64' width='128' height='64' fill='rgba(255,255,255,0.04)'/%3E%3Crect x='64' y='64' width='128' height='64' fill='rgba(120,90,50,0.16)'/%3E%3Crect x='192' y='64' width='128' height='64' fill='rgba(255,255,255,0.16)'/%3E%3Cpath d='M0 0H256M0 64H256M0 128H256M0 0V64M128 0V64M256 0V64M64 64V128M192 64V128' stroke='rgba(70,48,20,0.36)' stroke-width='4' fill='none'/%3E%3Cpath d='M0 3H256M0 67H256M2 0V64M130 0V64M66 64V128M194 64V128' stroke='rgba(255,255,255,0.3)' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    }
+    /* Dungeon theme, dark: warm stone-grey text instead of cool slate */
+    html[data-theme="dungeon"]:not(.light) .text-slate-100 { color: rgb(242 236 226); }
+    html[data-theme="dungeon"]:not(.light) .text-slate-200 { color: rgb(228 220 207); }
+    html[data-theme="dungeon"]:not(.light) .text-slate-300 { color: rgb(212 202 187); }
+    html[data-theme="dungeon"]:not(.light) .text-slate-400 { color: rgb(178 166 148); }
+    html[data-theme="dungeon"]:not(.light) .text-slate-500 { color: rgb(150 138 120); }
+    html[data-theme="dungeon"]:not(.light) .kbd { color: rgb(190 178 160 / 0.9); }
+
+    /* Light appearance: the fixed Tailwind amber/rose/emerald accents are too pale on limestone */
+    html.light .text-amber-200, html.light .text-amber-300 { color: rgb(138 84 0); }
+    html.light .text-emerald-300, html.light .text-emerald-400 { color: rgb(4 120 87); }
+    html.light .text-rose-200, html.light .text-rose-300, html.light .text-rose-400 { color: rgb(159 18 57); }
+
+    /* ---------- The dungeon wall ---------- */
+    html body {
+      background-color: rgb(var(--base-950));
+      background-image: var(--wall), var(--grain);
+      background-attachment: scroll;
+    }
+    html.light body, html.light body #profilePicker { background-color: rgb(var(--base-750)); }   /* sandstone wall behind the pale slabs */
+    body::before {            /* torchlight in the top corners, shadow in the corners of the room */
+      content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+      background:
+        radial-gradient(45% 38% at 0% 0%, rgb(var(--loud-500) / 0.16), transparent 70%),
+        radial-gradient(45% 38% at 100% 0%, rgb(var(--loud-500) / 0.16), transparent 70%),
+        radial-gradient(130% 95% at 50% 45%, transparent 55%, rgb(0 0 0 / 0.5));
+    }
+    html.light body::before {
+      background:
+        radial-gradient(45% 38% at 0% 0%, rgb(var(--accent-400) / 0.18), transparent 70%),
+        radial-gradient(45% 38% at 100% 0%, rgb(var(--accent-400) / 0.18), transparent 70%),
+        radial-gradient(130% 95% at 50% 45%, transparent 60%, rgb(70 50 25 / 0.22));
+    }
+    ::selection { background: rgb(var(--accent-500) / 0.45); }
+
+    /* ---------- Carved lettering ---------- */
+    html body :is(h1, h2, h3, .font-display):not(.timer-digits):not(#silenceCountdown):not(#dragonNextTime):not([id$="ShareText"]) {
+      font-family: var(--f-head); letter-spacing: 0.02em;
+    }
+    html body :is(h1, h2, h3) { font-weight: 800; }
+    html body > header h1 { font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; text-shadow: 0 2px 0 rgb(0 0 0 / 0.55), 0 0 18px rgb(var(--accent-400) / 0.25); }
+    html.light body > header h1 { text-shadow: 0 1px 0 rgb(255 255 255 / 0.7); }
+    html body > header h1 span { color: rgb(var(--accent-300)); }
+    html.light body > header h1 span { color: rgb(var(--accent-600)); }
+    html body > header p { letter-spacing: 0.18em; }
+
+    /* ---------- Iron-banded lintel (header) ---------- */
+    html body > header {
+      background-color: rgb(var(--base-850));
+      background-image: linear-gradient(rgb(255 255 255 / 0.08), transparent 45%, rgb(0 0 0 / 0.28)), var(--tex);
+      backdrop-filter: none; -webkit-backdrop-filter: none;
+      border-bottom: 8px solid rgb(var(--base-950));
+      box-shadow: inset 0 -3px 0 rgb(var(--accent-600) / 0.7), inset 0 2px 0 rgb(255 255 255 / var(--hi-a)), 0 6px 0 rgb(0 0 0 / var(--drop-a)), 0 12px 24px -4px rgb(0 0 0 / 0.45);
+    }
+    html.light body > header { border-bottom-color: rgb(var(--base-700)); }
+    body > header::after {    /* a row of rivets along the iron band */
+      content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 6px; pointer-events: none;
+      background: radial-gradient(circle at 50% 50%, var(--iron-hi) 0 0.8px, var(--iron) 1.3px 2.1px, var(--iron-lo) 2.5px 2.9px, transparent 3.2px) 0 0 / 56px 6px repeat-x;
+    }
+    html body .crest {
+      border-radius: 6px; border: 3px solid rgb(var(--accent-600));
+      background-image: radial-gradient(circle at 50% 40%, rgb(var(--loud-500) / 0.5), transparent 70%), var(--tex);
+      background-color: rgb(var(--base-950));
+      box-shadow: inset 0 0 10px rgb(0 0 0 / 0.7), 0 0 0 2px rgb(var(--base-950)), 0 0 16px rgb(var(--loud-500) / 0.35);
+      animation: torch 3.4s ease-in-out infinite alternate;
+    }
+    @keyframes torch { from { box-shadow: inset 0 0 10px rgb(0 0 0 / 0.7), 0 0 0 2px rgb(var(--base-950)), 0 0 10px rgb(var(--loud-500) / 0.25); } to { box-shadow: inset 0 0 10px rgb(0 0 0 / 0.7), 0 0 0 2px rgb(var(--base-950)), 0 0 20px rgb(var(--loud-500) / 0.5); } }
+
+    /* ---------- Plates: every button is a carved stone / metal plate ---------- */
+    html body :where(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button) {
+      background-color: rgb(var(--base-800));
+    }
+    html body :is(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button):not([data-gallery-key]):not([data-card-nav]):not([data-card-level]):not([data-pick]):not(.no-plate) {
+      background-image: linear-gradient(rgb(255 255 255 / 0.2), rgb(255 255 255 / 0.04) 45%, rgb(0 0 0 / 0.22)), var(--grain);
+      border-radius: 6px;
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / calc(var(--hi-a) + 0.08)), inset 0 -3px 0 rgb(0 0 0 / var(--lo-a)), 0 2px 0 rgb(0 0 0 / 0.5);
+      text-shadow: 0 1px 0 var(--text-edge);
+      transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+    }
+    html body :is(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button):not([data-gallery-key]):not([data-card-nav]):not([data-card-level]):not([data-pick]):not(.no-plate):not(:disabled):hover {
+      filter: brightness(1.13);
+    }
+    html body :is(body > header button, #quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn, #quickCalibrateBtn, #dragonNameForm button, [id$="Modal"] button, #profilePicker button):not([data-gallery-key]):not([data-card-nav]):not([data-card-level]):not([data-pick]):not(.no-plate):not(:disabled):active {
+      transform: translateY(2px);
+      box-shadow: inset 0 3px 7px rgb(0 0 0 / 0.5), inset 0 0 0 1px rgb(0 0 0 / 0.25), 0 0 0 rgb(0 0 0 / 0);
+      filter: brightness(0.94);
+    }
+    html body :is(#quickResetBtn, #swapActiveBtn, #tickToggleBtn, #saveSessionBtn) { font-weight: 700; letter-spacing: 0.02em; }
+    html body :is(#quickResetBtn, #swapActiveBtn, #tickToggleBtn) { min-height: 3rem; }
+    html body :focus-visible { outline: 3px solid rgb(var(--accent-400)); outline-offset: 2px; }
+    html body button:disabled { filter: saturate(0.5); }
+
+    /* The big Start / Pause control: a bronze-ringed stone medallion */
+    html body #centerPauseBtn {
+      border-width: 6px;
+      background-color: rgb(var(--base-800));
+      background-image: radial-gradient(circle at 35% 28%, rgb(255 255 255 / 0.28), transparent 55%), radial-gradient(circle at 50% 50%, transparent 55%, rgb(0 0 0 / 0.35)), var(--tex);
+      box-shadow: 0 0 0 3px rgb(var(--base-950)), 0 0 0 7px rgb(var(--accent-600)), 0 0 0 9px rgb(var(--base-950)),
+        inset 0 3px 0 rgb(255 255 255 / 0.25), inset 0 -8px 14px rgb(0 0 0 / 0.5), 0 16px 30px rgb(0 0 0 / 0.55);
+    }
+    html body #centerPauseBtn:active { box-shadow: 0 0 0 3px rgb(var(--base-950)), 0 0 0 7px rgb(var(--accent-600)), 0 0 0 9px rgb(var(--base-950)), inset 0 8px 16px rgb(0 0 0 / 0.6), 0 6px 12px rgb(0 0 0 / 0.5); }
+
+    /* ---------- Profile name plaque ---------- */
+    html body #profileBarBtn {
+      background-color: rgb(var(--base-800) / 0.85);
+      background-image: linear-gradient(rgb(255 255 255 / 0.12), transparent 50%, rgb(0 0 0 / 0.2)), var(--tex);
+      border: 2px solid rgb(var(--base-600) / 0.55); border-bottom-color: rgb(var(--base-950));
+      border-radius: 6px; padding-left: 0.9rem; padding-right: 1rem;
+      box-shadow: var(--bv), 0 3px 0 rgb(0 0 0 / var(--drop-a));
+    }
+    html body #profileBarBtn:hover { filter: brightness(1.12); }
+    /* the whole name, always: wraps (balanced) and scales down with the window instead of ending in "..." */
+    html body #profileBarBtn { max-width: 100%; min-width: 0; text-align: left; }
+    html body #profileBarBtn [data-bar-name] {
+      text-shadow: 0 2px 0 var(--text-edge); white-space: normal; overflow: visible; text-overflow: clip;
+      overflow-wrap: anywhere; text-wrap: balance; line-height: 1.15; font-size: clamp(1.05rem, 0.8rem + 1.5vw, 1.875rem);
+    }
+    html body #saveSessionBtn { text-align: center; }
+    @media (max-width: 639px) { html body #saveSessionBtn { max-width: 6.75rem; font-size: 0.7rem; line-height: 1.2; } }
+    @media (min-width: 640px) { html body #saveSessionBtn { white-space: nowrap; flex-shrink: 0; } }
+    /* other places where the player's name is the main label */
+    html body #profilePicker [data-pick] .truncate, html body #galleryTitle, html body #leaderboardList .truncate {
+      white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; text-wrap: balance;
+    }
+    html body #galleryTitle { line-height: 1.2; }
+    @media (min-width: 1560px) { html body #profileChip .truncate { max-width: 15rem; } }
+
+    /* ---------- Hewn slabs: clock cards, stat panels ---------- */
+    html body :is(#loudCard, #quietCard, .stone-panel) {
+      border-radius: 12px;
+      background-color: rgb(var(--base-850));
+      background-image: linear-gradient(180deg, rgb(255 255 255 / 0.07), transparent 22%, rgb(0 0 0 / 0.3)), var(--tex);
+      backdrop-filter: none; -webkit-backdrop-filter: none;
+      box-shadow: var(--bv), inset 0 0 36px rgb(0 0 0 / 0.32), var(--drop);
+    }
+    html body :is(#loudCard, #quietCard) {
+      border-width: 5px;
+      border-color: rgb(var(--base-600) / 0.55) rgb(var(--base-700) / 0.8) rgb(var(--base-950)) rgb(var(--base-700) / 0.8);
+    }
+    /* idle side: dim the stone instead of making it see-through */
+    html body :is(#loudCard, #quietCard):is(.opacity-50, .opacity-60) { opacity: 1; filter: brightness(0.62) saturate(0.7); }
+    html body #loudCard:hover { border-color: rgb(var(--loud-500) / 0.75); }
+    html body #quietCard:hover { border-color: rgb(var(--quiet-400) / 0.75); }
+    html body #loudCard.glow-loud { box-shadow: var(--bv), inset 0 0 30px rgb(var(--loud-500) / 0.28), 0 0 56px -4px rgb(var(--loud-500) / 0.6), var(--drop); }
+    html body #quietCard.glow-quiet { box-shadow: var(--bv), inset 0 0 26px rgb(var(--quiet-400) / 0.24), 0 0 50px -4px rgb(var(--quiet-400) / 0.55), var(--drop); }
+    html body :is(.stone-panel) { border-width: 4px; border-color: rgb(var(--base-700) / 0.75) rgb(var(--base-700) / 0.6) rgb(var(--base-950)) rgb(var(--base-700) / 0.6); }
+    html body :is(#loudCard, #quietCard)::before, html body .stone-panel::before {   /* iron rivets in the corners */
+      content: ""; position: absolute; inset: 0; z-index: 11; pointer-events: none;
+      background: radial-gradient(circle at 11px 11px, var(--iron-hi) 0 0.7px, var(--iron) 1.5px 2.8px, var(--iron-lo) 3.4px 3.8px, transparent 4.0px), radial-gradient(circle at calc(100% - 11px) 11px, var(--iron-hi) 0 0.7px, var(--iron) 1.5px 2.8px, var(--iron-lo) 3.4px 3.8px, transparent 4.0px), radial-gradient(circle at 11px calc(100% - 11px), var(--iron-hi) 0 0.7px, var(--iron) 1.5px 2.8px, var(--iron-lo) 3.4px 3.8px, transparent 4.0px), radial-gradient(circle at calc(100% - 11px) calc(100% - 11px), var(--iron-hi) 0 0.7px, var(--iron) 1.5px 2.8px, var(--iron-lo) 3.4px 3.8px, transparent 4.0px);
+    }
+    html body :is(#loudMascot, #quietMascot) {
+      border-radius: 8px; border-width: 3px;
+      box-shadow: inset 0 0 14px rgb(0 0 0 / 0.55), 0 1px 0 rgb(255 255 255 / 0.12);
+    }
+    /* ---------- Big clock digits ----------
+       The cards are size containers and the digits are sized from the card's own width (cqw), so they
+       claim all the room the panel gives them at any window size instead of stepping down at
+       breakpoints. 3.7 = width of "00:00.0" in em (3.27) + tablet padding (0.4); the .long (h:mm:ss.t,
+       up to 10 characters) divisor 4.9 fits "10:00:00.0" (4.43em + padding). Tabular figures, so
+       nothing jitters while ticking. Card padding is trimmed so the numbers get the space. */
+    html body :is(#loudCard, #quietCard) { container-type: inline-size; padding: 0.75rem; }
+    @media (min-width: 640px) { html body :is(#loudCard, #quietCard) { padding: 1rem; } }
+    html body .timer-digits { font-size: clamp(1.6rem, calc((100cqw - 6px) / 3.7), 9rem); }
+    html body .timer-digits.long { font-size: clamp(1.3rem, calc((100cqw - 6px) / 4.9), 7.4rem); }
+    html body :is(#loudTimeDisplay, #quietTimeDisplay) {
+      padding: 0.08em 0.2em 0.1em; border-radius: 8px; max-width: 100%; white-space: nowrap; font-variant-numeric: tabular-nums;
+      background: linear-gradient(rgb(0 0 0 / 0.42), rgb(0 0 0 / 0.26));
+      border: 2px solid rgb(0 0 0 / 0.4); border-bottom-color: rgb(255 255 255 / 0.1);
+      box-shadow: inset 0 4px 10px rgb(0 0 0 / 0.55);
+    }
+    html.light body :is(#loudTimeDisplay, #quietTimeDisplay) {
+      background: linear-gradient(rgb(var(--base-950) / 0.9), rgb(var(--base-900) / 0.7)); border-color: rgb(var(--base-700) / 0.6); box-shadow: inset 0 3px 8px rgb(60 40 15 / 0.28);
+    }
+    html body :is(#loudStatusPill, #quietStatusPill, #dragonMood) {
+      border-radius: 6px; text-transform: uppercase; letter-spacing: 0.08em;
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.2), inset 0 -2px 0 rgb(0 0 0 / 0.3);
+    }
+    html body #dismissCalibrateBtn { background-color: rgb(var(--accent-500)); color: rgb(var(--base-950)); text-shadow: 0 1px 0 rgb(255 255 255 / 0.35); }
+    html body :is(#loudStatusPill, #quietStatusPill) { font-size: 0.8125rem; }
+    html body :is(#loudStatusDot, #quietStatusDot, #micStatusDot) { border-radius: 2px; transform: rotate(45deg); }   /* little gems instead of dots */
+    html body #dragonRarity { border-radius: 4px; background-color: rgb(0 0 0 / 0.62); }
+    html body #silenceBox { border-radius: 8px; box-shadow: inset 0 0 14px rgb(0 0 0 / 0.4); }
+
+    /* keyboard-hint chips: small stone tabs */
+    html body .kbd {
+      border-radius: 3px; border-color: rgb(var(--base-600) / 0.7); border-bottom-width: 3px; border-bottom-color: rgb(var(--base-950));
+      background-image: linear-gradient(rgb(255 255 255 / 0.1), transparent), var(--grain);
+      background-color: rgb(var(--base-800));
+      box-shadow: 0 1px 0 rgb(0 0 0 / 0.4);
+    }
+    html body .kbd-row .kbd-sep { text-transform: lowercase; }
+
+    /* ---------- The dragon's window: a stone frame, bronze studs, recessed view ---------- */
+    html body #dragonStage {
+      border-radius: 14px; border: 12px solid transparent;
+      background-color: rgb(var(--base-750));
+      background-image: radial-gradient(circle at 6px 6px, var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at calc(100% - 6px) 6px, var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at 6px calc(100% - 6px), var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at 50% 6px, var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at 50% calc(100% - 6px), var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at 6px 50%, var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at calc(100% - 6px) 50%, var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), linear-gradient(135deg, rgb(255 255 255 / 0.14), transparent 35%, rgb(0 0 0 / 0.3)), var(--tex);
+      background-origin: border-box;
+      box-shadow: 0 0 0 2px rgb(var(--base-950)), inset 0 0 0 1px rgb(var(--base-950)), var(--drop), 0 0 40px -6px rgb(var(--accent-500) / 0.18);
+    }
+    html body #dragonStage::after {   /* inner lip: bronze liner and depth shadow over the scene */
+      content: ""; position: absolute; inset: 0; z-index: 30; pointer-events: none; border-radius: 2px;
+      box-shadow: inset 0 0 0 2px rgb(var(--accent-600) / 0.85), inset 0 0 0 4px rgb(0 0 0 / 0.55), inset 0 10px 22px rgb(0 0 0 / 0.55), inset 0 -8px 18px rgb(0 0 0 / 0.3);
+    }
+    html body #dragonStage .stage-title { flex-wrap: wrap; row-gap: 0.25rem; }
+    html body #dragonStage .stage-title h2 { font-size: clamp(1.6rem, 3vw, 2.25rem); }
+    html body #dragonLevelName { letter-spacing: 0.03em; }
+    html body #dragonNameBtn {   /* "Name your dragon": an engraved plaque */
+      background: rgb(0 0 0 / 0.28); border: 2px dashed rgb(var(--accent-400) / 0.55); border-radius: 6px;
+      box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.5);
+    }
+    html.light body #dragonNameBtn { background: rgb(255 250 235 / 0.85); box-shadow: inset 0 2px 4px rgb(60 40 15 / 0.25); }
+    html.light body #dragonNameBtn:hover { background: rgb(255 244 205); }
+    html body #dragonNameBtn:hover { background: rgb(var(--accent-500) / 0.18); border-style: solid; }
+    html body #dragonTrack > div { border-radius: 4px; box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.3), inset 0 2px 0 rgb(255 255 255 / 0.15); }
+
+    /* ---------- Troughs (progress / balance / noise meters): a groove with notched segments ---------- */
+    html body .trough {
+      position: relative; border-radius: 5px; background-color: rgb(var(--base-950));
+      border-color: rgb(var(--base-600) / 0.5); border-top-color: rgb(0 0 0 / 0.6);
+      box-shadow: inset 0 3px 7px rgb(0 0 0 / 0.65), 0 1px 0 rgb(255 255 255 / 0.1);
+    }
+    html.light body .trough { background-color: rgb(var(--base-800)); box-shadow: inset 0 3px 6px rgb(60 40 15 / 0.4), 0 1px 0 rgb(255 255 255 / 0.5); }
+    html body .trough > div:not(#thresholdMarker):not(#modalThresholdLine) { border-radius: 2px; box-shadow: inset 0 2px 0 rgb(255 255 255 / 0.28), inset 0 -2px 0 rgb(0 0 0 / 0.22); }
+    html body .trough > #loudProgressBar { border-radius: 2px 0 0 2px; }
+    html body .trough > #quietProgressBar { border-radius: 0 2px 2px 0; }
+    html body .trough::after {
+      content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: inherit;
+      background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), rgb(0 0 0 / 0.38) calc(10% - 2px) 10%);
+    }
+    html body :is(#thresholdMarker, #modalThresholdLine) { z-index: 2; background: rgb(var(--accent-300)); box-shadow: 0 0 6px rgb(var(--accent-400)), 0 0 0 1px rgb(0 0 0 / 0.6); }
+
+    /* ---------- Bars and banners ---------- */
+    html body #micMeterContainer {
+      background-color: rgb(var(--base-850)); background-image: var(--tex);
+      border-bottom: 4px solid rgb(var(--base-950)); box-shadow: 0 3px 0 rgb(0 0 0 / var(--drop-a));
+    }
+    html body #micErrorBanner > div {
+      border-radius: 6px; border-width: 2px; box-shadow: var(--bv), 0 3px 0 rgb(0 0 0 / var(--drop-a));
+      background-image: var(--grain);
+    }
+    html body > footer {
+      background-color: rgb(var(--base-900)); background-image: linear-gradient(rgb(255 255 255 / 0.05), transparent), var(--tex);
+      border-top: 5px solid rgb(var(--base-950)); box-shadow: inset 0 2px 0 rgb(255 255 255 / var(--hi-a));
+    }
+    html body #milestoneList li { border-radius: 6px; box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.25), inset 0 1px 0 rgb(255 255 255 / 0.08); }
+    html body .stone-panel h3 { text-transform: uppercase; letter-spacing: 0.06em; }
+
+    /* ---------- Toasts: glowing stone banners ---------- */
+    html body #toastContainer > div {
+      border-radius: 10px; border-width: 5px; background-color: rgb(var(--base-850));
+      background-image: linear-gradient(rgb(255 255 255 / 0.08), transparent 40%, rgb(0 0 0 / 0.25)), var(--tex);
+    }
+    html body #toastContainer > div > span { filter: drop-shadow(0 3px 0 rgb(0 0 0 / 0.4)); }
+    html body #toastContainer .font-display { text-transform: uppercase; letter-spacing: 0.04em; text-shadow: 0 2px 0 var(--text-edge); }
+
+    /* ---------- Modals: slabs set in an iron-studded frame ---------- */
+    html body [id$="Modal"]:not(#cardModal) {
+      background-color: rgb(8 6 4 / 0.82);
+      background-image: radial-gradient(90% 70% at 50% 40%, transparent 40%, rgb(0 0 0 / 0.55));
+      backdrop-filter: none; -webkit-backdrop-filter: none;
+    }
+    html body #cardModal { background-color: rgb(8 6 4 / 0.88); backdrop-filter: none; -webkit-backdrop-filter: none; }
+    html body :is(#calibrateModal, #galleryModal, #leaderboardModal, #logsModal, #settingsModal, #timeExpiredModal) > div {
+      border-radius: 14px; border: 10px solid transparent;
+      background-color: rgb(var(--base-800));
+      background-image: radial-gradient(circle at 5px 5px, var(--iron-hi) 0 0.7px, var(--iron) 1.4px 2.7px, var(--iron-lo) 3.3px 3.6px, transparent 3.8px), radial-gradient(circle at calc(100% - 5px) 5px, var(--iron-hi) 0 0.7px, var(--iron) 1.4px 2.7px, var(--iron-lo) 3.3px 3.6px, transparent 3.8px), radial-gradient(circle at 5px calc(100% - 5px), var(--iron-hi) 0 0.7px, var(--iron) 1.4px 2.7px, var(--iron-lo) 3.3px 3.6px, transparent 3.8px), radial-gradient(circle at calc(100% - 5px) calc(100% - 5px), var(--iron-hi) 0 0.7px, var(--iron) 1.4px 2.7px, var(--iron-lo) 3.3px 3.6px, transparent 3.8px), radial-gradient(circle at 50% 5px, var(--iron-hi) 0 0.7px, var(--iron) 1.4px 2.7px, var(--iron-lo) 3.3px 3.6px, transparent 3.8px), radial-gradient(circle at 50% calc(100% - 5px), var(--iron-hi) 0 0.7px, var(--iron) 1.4px 2.7px, var(--iron-lo) 3.3px 3.6px, transparent 3.8px), radial-gradient(circle at 5px 50%, var(--iron-hi) 0 0.7px, var(--iron) 1.4px 2.7px, var(--iron-lo) 3.3px 3.6px, transparent 3.8px), radial-gradient(circle at calc(100% - 5px) 50%, var(--iron-hi) 0 0.7px, var(--iron) 1.4px 2.7px, var(--iron-lo) 3.3px 3.6px, transparent 3.8px), linear-gradient(135deg, rgb(255 255 255 / 0.14), transparent 30%, rgb(0 0 0 / 0.28)), var(--tex);
+      background-origin: border-box;
+      box-shadow: inset 0 0 0 2px rgb(var(--accent-600) / 0.85), inset 0 0 0 4px rgb(0 0 0 / 0.5), inset 0 0 0 999px rgb(var(--base-900) / 0.62),
+        0 0 0 3px rgb(var(--base-950)), 0 24px 60px rgb(0 0 0 / 0.65);
+    }
+    html.light body :is(#calibrateModal, #galleryModal, #leaderboardModal, #logsModal, #settingsModal, #timeExpiredModal) > div {
+      box-shadow: inset 0 0 0 2px rgb(var(--accent-600) / 0.85), inset 0 0 0 4px rgb(0 0 0 / 0.25), inset 0 0 0 999px rgb(var(--base-900) / 0.7), 0 0 0 3px rgb(var(--base-700)), 0 24px 60px rgb(0 0 0 / 0.5);
+    }
+    html body #timeExpiredModal > div { border-color: transparent; box-shadow: inset 0 0 0 2px rgb(var(--accent-400)), inset 0 0 0 4px rgb(0 0 0 / 0.5), inset 0 0 0 999px rgb(var(--base-900) / 0.62), 0 0 0 3px rgb(var(--base-950)), 0 0 60px rgb(var(--accent-500) / 0.4), 0 24px 60px rgb(0 0 0 / 0.65); }
+    html body [id$="Modal"] > div h3 { text-transform: uppercase; letter-spacing: 0.06em; text-shadow: 0 2px 0 var(--text-edge); }
+    html body [id$="Modal"] > div .border-b, html body [id$="Modal"] > div .border-t {   /* chiselled dividers */
+      border-color: rgb(0 0 0 / 0.45); box-shadow: 0 1px 0 rgb(255 255 255 / 0.1);
+    }
+    html body [id$="Modal"] > div .border-b { box-shadow: 0 1px 0 rgb(255 255 255 / 0.1); }
+    html body [id$="Modal"] > div .border-t { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1); }
+    /* inset wells inside the modals */
+    html body :is(#calibrateModal, #settingsModal) > div > div[class*="rounded-2xl"], html body :is(#calibrateModal, #settingsModal) > div > div > div[class*="rounded-2xl"] {
+      border-radius: 8px; border-color: rgb(0 0 0 / 0.45);
+      box-shadow: inset 0 3px 10px rgb(0 0 0 / 0.45), 0 1px 0 rgb(255 255 255 / 0.1);
+    }
+    html.light body :is(#calibrateModal, #settingsModal) > div > div[class*="rounded-2xl"], html.light body :is(#calibrateModal, #settingsModal) > div > div > div[class*="rounded-2xl"] {
+      border-color: rgb(var(--base-700) / 0.6); box-shadow: inset 0 3px 8px rgb(60 40 15 / 0.22), 0 1px 0 rgb(255 255 255 / 0.5);
+    }
+    html body :is(#galleryModal, #leaderboardModal, #logsModal, #calibrateModal, #settingsModal) .rounded-2xl:not(button) { border-radius: 8px; }
+    html body :is(#galleryNow, #galleryBlend, #galleryHybrids) > div { border-radius: 8px; }
+    html body #galleryGrid > :is(button, div) { border-radius: 8px; position: relative; }
+    html body #galleryGrid > :is(button, div)::after {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+      box-shadow: inset 0 2px 0 rgb(255 255 255 / 0.12), inset 0 -4px 0 rgb(0 0 0 / 0.28);
+    }
+    html body #leaderboardList > div { border-radius: 8px; box-shadow: inset 0 2px 8px rgb(0 0 0 / 0.35), 0 1px 0 rgb(255 255 255 / 0.08); }
+    /* the dragon trading card keeps its species colours; it just gets a studded iron rim */
+    html body #dragonCard > div {
+      border-radius: 16px; box-shadow: 0 0 0 3px rgb(var(--base-950)), 0 0 0 6px var(--iron), 0 0 0 8px var(--iron-lo), inset 0 2px 0 rgb(255 255 255 / 0.3), inset 0 -3px 0 rgb(0 0 0 / 0.3), 0 24px 50px rgb(0 0 0 / 0.6);
+    }
+
+    /* ---------- Tables ---------- */
+    html body #logsModal table thead { font-family: var(--f-head); letter-spacing: 0.08em; font-weight: 700; }
+    html body #logsModal table thead tr { border-bottom: 3px double rgb(var(--base-700)); }
+
+    /* ---------- Parchment: reading surfaces (log table, player cards) ---------- */
+    html body :is(.parchment, #profilePicker [data-pick]) {
+      color: var(--parch-ink);
+      background-color: var(--parch-2) !important;
+      background-image: radial-gradient(120% 90% at 20% 0%, rgb(255 255 255 / 0.45), transparent 60%), radial-gradient(90% 60% at 90% 100%, rgb(120 70 15 / 0.22), transparent 70%), linear-gradient(var(--parch-1), var(--parch-2)), var(--grain);
+      border: 3px solid var(--parch-edge);
+      box-shadow: inset 0 0 0 1px #fff4cc, inset 0 -3px 0 rgb(120 80 20 / 0.3), inset 0 0 22px rgb(120 70 15 / 0.28), 0 3px 0 rgb(0 0 0 / 0.5);
+    }
+    html body .parchment { border-radius: 8px; }
+    html body :is(.parchment, #profilePicker [data-pick]) :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300) { color: var(--parch-ink) !important; text-shadow: none; }
+    html body :is(.parchment, #profilePicker [data-pick]) :is(.text-slate-400, .text-slate-500) { color: var(--parch-ink-2) !important; }
+    html body :is(.parchment, #profilePicker [data-pick]) :is(.text-pink-300, .text-pink-400) { color: #7a4a08 !important; }
+    html body :is(.parchment, #profilePicker [data-pick]) :is(.text-loud-300, .text-loud-400) { color: color-mix(in srgb, rgb(var(--loud-600)) 82%, black) !important; }
+    html body :is(.parchment, #profilePicker [data-pick]) :is(.text-quiet-300, .text-quiet-400, .text-cyan-300) { color: color-mix(in srgb, rgb(var(--quiet-600)) 62%, black) !important; }
+    html body .parchment tbody > tr { border-color: rgb(110 70 20 / 0.3); }
+    html body .parchment tbody > tr:hover { background: rgb(150 100 30 / 0.14); }
+    html body .parchment thead { color: var(--parch-ink-2); border-color: rgb(110 70 20 / 0.5); }
+    html body .parchment thead tr { border-bottom-color: rgb(110 70 20 / 0.55); }
+
+    /* ---------- Form controls: carved into the stone ---------- */
+    html body :is(input[type="text"], input[name="profileName"], #dragonNameInput) {
+      border-radius: 6px; border-width: 2px; border-color: rgb(0 0 0 / 0.55);
+      background-color: rgb(var(--base-950)); box-shadow: inset 0 3px 8px rgb(0 0 0 / 0.65), 0 1px 0 rgb(255 255 255 / 0.12);
+    }
+    html.light body :is(input[type="text"], input[name="profileName"], #dragonNameInput) { background-color: rgb(var(--base-900)); border-color: rgb(var(--base-700)); box-shadow: inset 0 3px 6px rgb(60 40 15 / 0.3); }
+    html body :is(input[type="text"], input[name="profileName"], #dragonNameInput):focus { border-color: rgb(var(--accent-400)); box-shadow: inset 0 3px 8px rgb(0 0 0 / 0.65), 0 0 0 3px rgb(var(--accent-400) / 0.35); }
+    html body input[type="range"] { -webkit-appearance: none; appearance: none; height: 12px; border-radius: 4px; background: rgb(var(--base-950)); box-shadow: inset 0 3px 6px rgb(0 0 0 / 0.7), 0 1px 0 rgb(255 255 255 / 0.12); border: 1px solid rgb(0 0 0 / 0.5); }
+    html.light body input[type="range"] { background: rgb(var(--base-800)); box-shadow: inset 0 2px 5px rgb(60 40 15 / 0.4), 0 1px 0 rgb(255 255 255 / 0.5); }
+    html body input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 28px; border-radius: 4px; cursor: grab;
+      background: linear-gradient(rgb(var(--accent-300)), rgb(var(--accent-600))); border: 2px solid rgb(var(--base-950)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), inset 0 -3px 0 rgb(0 0 0 / 0.3), 0 2px 0 rgb(0 0 0 / 0.5); }
+    html body input[type="range"]::-moz-range-thumb { width: 18px; height: 24px; border-radius: 4px; background: rgb(var(--accent-500)); border: 2px solid rgb(var(--base-950)); }
+    html body input[type="checkbox"] { width: 1.25rem; height: 1.25rem; border-radius: 3px; }
+    html body :is(#calibMicSwitchTrack) { border-radius: 6px; box-shadow: inset 0 3px 7px rgb(0 0 0 / 0.6); background-image: var(--grain); }
+    html body :is(#calibMicSwitchKnob) { border-radius: 4px; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), inset 0 -2px 0 rgb(0 0 0 / 0.3), 0 2px 0 rgb(0 0 0 / 0.4); }
+
+    /* ---------- "Who's playing?" ---------- */
+    html body #profilePicker {
+      background-color: rgb(var(--base-950));
+      background-image: radial-gradient(60% 45% at 50% 0%, rgb(var(--loud-500) / 0.22), transparent 75%), radial-gradient(130% 95% at 50% 45%, transparent 50%, rgb(0 0 0 / 0.55)), var(--wall), var(--grain);
+      backdrop-filter: none; -webkit-backdrop-filter: none;
+    }
+    html.light body #profilePicker { background-image: radial-gradient(60% 45% at 50% 0%, rgb(var(--accent-400) / 0.25), transparent 75%), radial-gradient(130% 95% at 50% 45%, transparent 55%, rgb(70 50 25 / 0.25)), var(--wall), var(--grain); }
+    html body #profilePicker > div {
+      position: relative;
+      padding: clamp(18px, 4vw, 36px); border-radius: 16px; border: 12px solid transparent;
+      background-color: rgb(var(--base-800));
+      background-image: radial-gradient(circle at 6px 6px, var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at calc(100% - 6px) 6px, var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at 6px calc(100% - 6px), var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at 50% 6px, var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at 50% calc(100% - 6px), var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at 6px 50%, var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), radial-gradient(circle at calc(100% - 6px) 50%, var(--iron-hi) 0 0.8px, var(--iron) 1.7px 3.1px, var(--iron-lo) 3.8px 4.2px, transparent 4.4px), linear-gradient(135deg, rgb(255 255 255 / 0.14), transparent 30%, rgb(0 0 0 / 0.3)), var(--tex);
+      background-origin: border-box;
+      box-shadow: inset 0 0 0 2px rgb(var(--accent-600) / 0.85), inset 0 0 0 4px rgb(0 0 0 / 0.5), inset 0 0 0 999px rgb(var(--base-900) / 0.6),
+        0 0 0 3px rgb(var(--base-950)), 0 26px 70px rgb(0 0 0 / 0.65);
+    }
+    html.light body #profilePicker > div { box-shadow: inset 0 0 0 2px rgb(var(--accent-600) / 0.85), inset 0 0 0 4px rgb(0 0 0 / 0.25), inset 0 0 0 999px rgb(var(--base-900) / 0.7), 0 0 0 3px rgb(var(--base-700)), 0 26px 70px rgb(0 0 0 / 0.45); }
+    html body #profilePicker h2 { text-transform: uppercase; letter-spacing: 0.08em; text-shadow: 0 2px 0 var(--text-edge), 0 0 20px rgb(var(--accent-400) / 0.25); }
+    html body #profilePicker .text-5xl { filter: drop-shadow(0 0 16px rgb(var(--loud-500) / 0.55)) drop-shadow(0 3px 0 rgb(0 0 0 / 0.4)); }
+    html body #profilePicker form {
+      border-radius: 10px; border-color: rgb(0 0 0 / 0.5); background-image: var(--grain);
+      box-shadow: inset 0 4px 14px rgb(0 0 0 / 0.5), 0 1px 0 rgb(255 255 255 / 0.12);
+    }
+    html body #profilePicker [data-pick] { border-radius: 8px; transition: transform 0.1s ease, filter 0.15s ease; }
+    html body #profilePicker [data-pick]:hover, html body #profilePicker [data-pick]:focus-visible { filter: brightness(1.06); transform: translateY(-2px); border-color: rgb(var(--accent-600)); box-shadow: inset 0 0 0 1px #fff4cc, inset 0 0 22px rgb(120 70 15 / 0.28), 0 0 0 2px rgb(var(--accent-400)), 0 7px 0 rgb(0 0 0 / 0.45); }
+    html body #profilePicker [data-pick] .font-display { color: var(--parch-ink) !important; text-transform: none; }
+    html body #profilePicker [data-pick] .truncate { text-shadow: none; }
+    html body #profilePicker [data-pick] .text-4xl, html body #profilePicker [data-pick] .text-5xl { filter: drop-shadow(0 2px 0 rgb(80 50 10 / 0.35)); }
+    html body #profilePicker [data-act="new"] { border-radius: 8px; border-width: 3px; border-style: dashed; min-height: 5.5rem; }
+    html body #profilePicker [data-edit], html body #profilePicker [data-del] { border-radius: 5px; border-width: 2px; background-color: rgb(var(--base-800)); border-color: rgb(var(--base-950)); }
+    html body #profilePicker [data-avatar] { border-width: 2px; }
+    html body #profilePicker [data-avatar][aria-pressed="true"] { box-shadow: inset 0 3px 7px rgb(0 0 0 / 0.5), 0 0 0 3px rgb(var(--accent-400)); }
+
+    /* ---------- Scrollbars: stone rails ---------- */
+    ::-webkit-scrollbar { width: 14px; height: 14px; }
+    ::-webkit-scrollbar-track { background: rgb(var(--base-950)); box-shadow: inset 0 0 6px rgb(0 0 0 / 0.7); }
+    ::-webkit-scrollbar-thumb { background-color: rgb(var(--base-600)); background-image: linear-gradient(90deg, rgb(255 255 255 / 0.18), transparent 40%, rgb(0 0 0 / 0.25)), var(--grain); border: 3px solid rgb(var(--base-950)); border-radius: 7px; }
+    ::-webkit-scrollbar-thumb:hover { background-color: rgb(var(--base-500)); }
+    ::-webkit-scrollbar-corner { background: rgb(var(--base-950)); }
+    @supports not selector(::-webkit-scrollbar) { * { scrollbar-color: rgb(var(--base-600)) rgb(var(--base-950)); } }
+
+    /* ---------- Phones ---------- */
+    @media (max-width: 1199px) {   /* header: logo + title on one row, the buttons wrap onto the next (nothing runs off-screen) */
+      html body > header { flex-wrap: wrap; row-gap: 10px; padding: 10px 12px; }
+      html body > header > div:last-child { width: 100%; gap: 4px; justify-content: space-between; flex-wrap: wrap; }
+      html body > header > div:last-child > button { flex: 1 1 auto; min-width: 2.5rem; justify-content: center; min-height: 2.5rem; }
+    }
+    @media (max-width: 639px) {
+      html body #dragonStage { border-width: 9px; border-radius: 12px; background-image: radial-gradient(circle at 4.5px 4.5px, var(--iron-hi) 0 0.6px, var(--iron) 1.3px 2.4px, var(--iron-lo) 2.9px 3.3px, transparent 3.4px), radial-gradient(circle at calc(100% - 4.5px) 4.5px, var(--iron-hi) 0 0.6px, var(--iron) 1.3px 2.4px, var(--iron-lo) 2.9px 3.3px, transparent 3.4px), radial-gradient(circle at 4.5px calc(100% - 4.5px), var(--iron-hi) 0 0.6px, var(--iron) 1.3px 2.4px, var(--iron-lo) 2.9px 3.3px, transparent 3.4px), radial-gradient(circle at calc(100% - 4.5px) calc(100% - 4.5px), var(--iron-hi) 0 0.6px, var(--iron) 1.3px 2.4px, var(--iron-lo) 2.9px 3.3px, transparent 3.4px), radial-gradient(circle at 50% 4.5px, var(--iron-hi) 0 0.6px, var(--iron) 1.3px 2.4px, var(--iron-lo) 2.9px 3.3px, transparent 3.4px), radial-gradient(circle at 50% calc(100% - 4.5px), var(--iron-hi) 0 0.6px, var(--iron) 1.3px 2.4px, var(--iron-lo) 2.9px 3.3px, transparent 3.4px), radial-gradient(circle at 4.5px 50%, var(--iron-hi) 0 0.6px, var(--iron) 1.3px 2.4px, var(--iron-lo) 2.9px 3.3px, transparent 3.4px), radial-gradient(circle at calc(100% - 4.5px) 50%, var(--iron-hi) 0 0.6px, var(--iron) 1.3px 2.4px, var(--iron-lo) 2.9px 3.3px, transparent 3.4px), linear-gradient(135deg, rgb(255 255 255 / 0.14), transparent 35%, rgb(0 0 0 / 0.3)), var(--tex); }
+      html body :is(#calibrateModal, #galleryModal, #leaderboardModal, #logsModal, #settingsModal, #timeExpiredModal) > div { border-width: 8px; background-image: radial-gradient(circle at 4px 4px, var(--iron-hi) 0 0.6px, var(--iron) 1.2px 2.2px, var(--iron-lo) 2.7px 3.0px, transparent 3.1px), radial-gradient(circle at calc(100% - 4px) 4px, var(--iron-hi) 0 0.6px, var(--iron) 1.2px 2.2px, var(--iron-lo) 2.7px 3.0px, transparent 3.1px), radial-gradient(circle at 4px calc(100% - 4px), var(--iron-hi) 0 0.6px, var(--iron) 1.2px 2.2px, var(--iron-lo) 2.7px 3.0px, transparent 3.1px), radial-gradient(circle at calc(100% - 4px) calc(100% - 4px), var(--iron-hi) 0 0.6px, var(--iron) 1.2px 2.2px, var(--iron-lo) 2.7px 3.0px, transparent 3.1px), linear-gradient(135deg, rgb(255 255 255 / 0.14), transparent 30%, rgb(0 0 0 / 0.28)), var(--tex); }
+      html body #profilePicker > div { border-width: 9px; background-image: radial-gradient(circle at 4px 4px, var(--iron-hi) 0 0.6px, var(--iron) 1.2px 2.2px, var(--iron-lo) 2.7px 3.0px, transparent 3.1px), radial-gradient(circle at calc(100% - 4px) 4px, var(--iron-hi) 0 0.6px, var(--iron) 1.2px 2.2px, var(--iron-lo) 2.7px 3.0px, transparent 3.1px), radial-gradient(circle at 4px calc(100% - 4px), var(--iron-hi) 0 0.6px, var(--iron) 1.2px 2.2px, var(--iron-lo) 2.7px 3.0px, transparent 3.1px), radial-gradient(circle at calc(100% - 4px) calc(100% - 4px), var(--iron-hi) 0 0.6px, var(--iron) 1.2px 2.2px, var(--iron-lo) 2.7px 3.0px, transparent 3.1px), linear-gradient(135deg, rgb(255 255 255 / 0.14), transparent 30%, rgb(0 0 0 / 0.3)), var(--tex); }
+      html body :is(#loudCard, #quietCard) { border-width: 4px; }
+      html body :is(#loudCard, #quietCard, .stone-panel)::before { background: radial-gradient(circle at 8px 8px, var(--iron-hi) 0 0.5px, var(--iron) 1.1px 2.1px, var(--iron-lo) 2.6px 2.9px, transparent 3.0px), radial-gradient(circle at calc(100% - 8px) 8px, var(--iron-hi) 0 0.5px, var(--iron) 1.1px 2.1px, var(--iron-lo) 2.6px 2.9px, transparent 3.0px), radial-gradient(circle at 8px calc(100% - 8px), var(--iron-hi) 0 0.5px, var(--iron) 1.1px 2.1px, var(--iron-lo) 2.6px 2.9px, transparent 3.0px), radial-gradient(circle at calc(100% - 8px) calc(100% - 8px), var(--iron-hi) 0 0.5px, var(--iron) 1.1px 2.1px, var(--iron-lo) 2.6px 2.9px, transparent 3.0px); }
+      html body > header h1 { font-size: 1.05rem; }
+      html body > header > div:last-child > button { flex: 1 1 0; padding-left: 0.25rem; padding-right: 0.25rem; }
+      html body > header > div:last-child > button .kbd { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) { html body .crest { animation: none; } }
+    /* STONE-LAYER:END */
   </style>
 </head>
 <body class="bg-violet-950 text-slate-100 font-sans min-h-screen flex flex-col justify-between overflow-x-hidden selection:bg-loud-500 selection:text-white">
@@ -706,7 +1253,7 @@
   <!-- Header / Top Bar -->
   <header class="w-full px-4 sm:px-8 py-3.5 border-b border-violet-800/60 bg-violet-900/80 backdrop-blur-md flex items-center justify-between z-30 sticky top-0">
     <div class="flex items-center gap-3">
-      <div class="flex items-center justify-center w-11 h-11 rounded-2xl bg-gradient-to-br from-loud-500 to-quiet-400 shadow-lg text-2xl">
+      <div class="crest flex items-center justify-center w-11 h-11 rounded-2xl bg-gradient-to-br from-loud-500 to-quiet-400 shadow-lg text-2xl">
         🐉
       </div>
       <div class="leading-tight">
@@ -740,14 +1287,14 @@
       </button>
 
       <!-- Settings Dropdown -->
-      <!-- Dragon Gallery: every dragon type this class has raised to Queen -->
+      <!-- Dragon Gallery: every dragon type this player has raised to Queen -->
       <button id="galleryBtn" title="Dragon Gallery" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-750 text-pink-300 border border-violet-700 transition">
         <span>🐉</span>
         <span class="hidden sm:inline">Gallery</span>
       </button>
 
-      <!-- Leaderboard: how the classes compare -->
-      <button id="leaderboardBtn" title="Class Leaderboard" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-750 text-amber-300 border border-violet-700 transition">
+      <!-- Leaderboard: how the players compare -->
+      <button id="leaderboardBtn" title="Leaderboard" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-750 text-amber-300 border border-violet-700 transition">
         <span>🏆</span>
         <span class="hidden sm:inline">Leaderboard</span>
       </button>
@@ -775,7 +1322,7 @@
         <span>🎙️ Room Noise:</span>
         <span id="noiseLevelLabel" class="text-cyan-300 w-9 text-right font-mono">0%</span>
       </span>
-      <div class="flex-1 h-3.5 bg-violet-950 rounded-full overflow-hidden p-0.5 border border-violet-700 relative">
+      <div class="trough flex-1 h-3.5 bg-violet-950 rounded-full overflow-hidden p-0.5 border border-violet-700 relative">
         <div id="noiseMeterFill" class="h-full bg-gradient-to-r from-emerald-400 via-amber-400 to-loud-500 rounded-full transition-all duration-75" style="width: 0%;"></div>
         <!-- Noise threshold line marker -->
         <div id="thresholdMarker" class="absolute top-0 bottom-0 w-1 bg-white shadow-lg pointer-events-none" style="left: 30%;"></div>
@@ -795,26 +1342,27 @@
     </div>
   </div>
 
-  <!-- Class Name Bar -->
-  <div class="w-full max-w-4xl mx-auto px-4 pt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-    <div class="flex items-center gap-2 w-full sm:w-auto">
-      <datalist id="classNameList"></datalist>
-      <label for="classNameInput" class="text-xs uppercase font-bold tracking-wider text-pink-300 whitespace-nowrap">Class / Period:</label>
-      <input type="text" id="classNameInput" list="classNameList" autocomplete="off" title="Each class has its own dragon and gallery. Type a new name to add a class." placeholder="e.g. 5th Grade Science, Period 3" value="Room 101" class="bg-violet-900 border border-violet-700/80 rounded-xl px-3 py-1.5 text-sm text-white font-semibold focus:outline-none focus:border-cyan-400 w-full sm:w-64 placeholder-violet-500 shadow-inner">
+  <!-- Player Bar: who's on stage + save to log -->
+  <div class="w-full max-w-6xl mx-auto px-4 pt-4 flex flex-row items-center justify-between gap-3">
+    <div class="flex items-center gap-2 min-w-0 flex-1">
+      <button type="button" id="profileBarBtn" title="Pick a player" class="flex items-center gap-2.5 min-w-0 max-w-full rounded-2xl px-3 py-1.5 -mx-3 hover:bg-violet-800/60 transition focus:outline-none focus:ring-2 focus:ring-pink-400">
+        <span data-bar-avatar class="text-3xl sm:text-4xl leading-none" aria-hidden="true">🐉</span>
+        <span data-bar-name class="font-display font-bold text-white text-2xl sm:text-3xl leading-tight text-left">My class</span>
+      </button>
     </div>
 
     <!-- Save Class Session to Log Button -->
     <div class="flex items-center gap-2">
-      <button id="saveSessionBtn" class="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-700 text-cyan-300 border border-violet-700 transition">
+      <button id="saveSessionBtn" title="Sessions are saved to the log on their own. This saves right now." class="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-violet-700 text-cyan-300 border border-violet-700 transition">
         <span>💾 Save Current Session to Log</span>
       </button>
     </div>
   </div>
 
   <!-- Main Playing Field: Loud card | Dragon stage | Quiet card -->
-  <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 lg:p-8 flex flex-col justify-center">
+  <main class="flex-1 max-w-[1680px] w-full mx-auto p-3 sm:p-6 lg:p-6 flex flex-col justify-center">
 
-    <div class="grid grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.55fr)_minmax(0,1fr)] gap-3 sm:gap-6 items-stretch">
+    <div class="grid grid-cols-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.4fr)_minmax(0,1.1fr)] gap-3 sm:gap-6 items-stretch">
 
       <!-- DRAGON STAGE (center) -->
       <section id="dragonStage" class="col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-1 relative flex flex-col overflow-hidden rounded-[2.5rem] border-4 border-violet-800 shadow-2xl min-h-[420px] sm:min-h-[520px]">
@@ -864,6 +1412,13 @@
           <div>
             <div class="text-xs sm:text-sm font-bold uppercase tracking-widest text-quiet-300"><span id="dragonGenLabel" class="hidden"></span>Level <span id="dragonLevelNum">1</span><span id="dragonRarity" class="hidden ml-2 inline-block px-2 py-0.5 rounded-full border normal-case tracking-normal align-middle"></span></div>
             <h2 id="dragonLevelName" class="text-3xl sm:text-4xl font-display font-bold text-white leading-tight">Dragon Egg</h2>
+            <div id="dragonNameRow" class="mt-1 flex items-center gap-1.5 min-w-0">
+              <button id="dragonNameBtn" type="button" class="max-w-[16rem] inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 -ml-2 text-sm sm:text-base font-bold text-pink-300 hover:bg-violet-950/50 transition focus:outline-none focus:ring-2 focus:ring-pink-400"><span id="dragonNameText" class="truncate">Name your dragon</span><span aria-hidden="true" class="text-xs">✏️</span></button>
+              <form id="dragonNameForm" class="hidden items-center gap-1.5" autocomplete="off">
+                <input id="dragonNameInput" type="text" maxlength="24" placeholder="Name your dragon" aria-label="Dragon name" class="w-40 sm:w-48 bg-violet-950 border border-violet-600 rounded-lg px-2.5 py-1 text-sm text-white font-semibold focus:outline-none focus:border-pink-400 placeholder-violet-500">
+                <button type="submit" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-pink-500 hover:bg-pink-400 text-white on-color">Save</button>
+              </form>
+            </div>
             <div id="dragonHearts" class="flex items-center gap-1 mt-1" aria-label="Dragon hearts"></div>
           </div>
           <div id="dragonMood" class="shrink-0 px-3 py-1.5 rounded-full text-xs sm:text-sm font-bold bg-violet-950/70 text-slate-300 border border-violet-700">😴 Sleeping</div>
@@ -885,7 +1440,7 @@
             <span id="dragonNextLabel" class="text-quiet-200 truncate">Next: Hatching</span>
             <span id="dragonNextTime" class="font-display text-white whitespace-nowrap">5:00 of quiet</span>
           </div>
-          <div class="h-5 rounded-full bg-violet-950/80 border-2 border-violet-700 overflow-hidden p-0.5">
+          <div class="trough h-5 rounded-full bg-violet-950/80 border-2 border-violet-700 overflow-hidden p-0.5">
             <div id="dragonXpFill" class="h-full rounded-full bg-gradient-to-r from-quiet-500 to-quiet-300" style="width: 0%;"></div>
           </div>
           <p id="dragonHint" class="text-xs sm:text-sm text-slate-300 mt-2 text-center font-semibold">Every 5 quiet minutes grows your dragon. Too much noise and it runs off to hide!</p>
@@ -920,7 +1475,7 @@
               <span>🤫 Stay quiet to go back</span>
               <span id="silenceCountdown" class="font-display text-lg">10s</span>
             </div>
-            <div class="h-3 mt-1.5 bg-violet-950 rounded-full overflow-hidden">
+            <div class="trough h-3 mt-1.5 bg-violet-950 rounded-full overflow-hidden">
               <div id="silenceFill" class="h-full bg-gradient-to-r from-quiet-500 to-quiet-300 rounded-full transition-all duration-150" style="width: 0%;"></div>
             </div>
           </div>
@@ -976,7 +1531,7 @@
       </button>
 
       <div class="relative flex flex-col items-center order-first sm:order-none w-full sm:w-auto">
-        <button id="centerPauseBtn" title="Spacebar: Pause / Resume" class="relative group flex items-center justify-center w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-violet-900 border-4 border-violet-700 hover:border-white shadow-[0_15px_45px_rgba(0,0,0,0.6)] hover:scale-110 active:scale-95 transition-all text-white focus:outline-none ring-4 ring-violet-950">
+        <button id="centerPauseBtn" title="Spacebar: Pause / Resume" class="no-plate relative group flex items-center justify-center w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-violet-900 border-4 border-violet-700 hover:border-white shadow-[0_15px_45px_rgba(0,0,0,0.6)] hover:scale-110 active:scale-95 transition-all text-white focus:outline-none ring-4 ring-violet-950">
           <div class="absolute -inset-1 rounded-full bg-gradient-to-r from-loud-500 to-quiet-400 opacity-40 group-hover:opacity-80 blur-md transition-opacity"></div>
           <div id="pauseIconContainer" class="relative z-10 flex items-center justify-center">
             <span id="centerButtonIcon">
@@ -993,7 +1548,7 @@
     </div>
 
     <!-- Comparison Progress & Session Statistics -->
-    <div class="mt-8 bg-violet-900/70 border border-violet-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur-md">
+    <div class="stone-panel mt-8 bg-violet-900/70 border border-violet-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur-md">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
         <div>
           <h3 class="font-display font-bold text-base text-slate-100 flex items-center gap-2">
@@ -1009,7 +1564,7 @@
       </div>
 
       <!-- Ratio Visual Bar -->
-      <div class="w-full h-5 bg-violet-950 rounded-full overflow-hidden flex p-0.5 border border-violet-700 shadow-inner">
+      <div class="trough w-full h-5 bg-violet-950 rounded-full overflow-hidden flex p-0.5 border border-violet-700 shadow-inner">
         <div id="loudProgressBar" class="h-full bg-gradient-to-r from-loud-600 to-loud-400 rounded-l-full transition-all duration-200" style="width: 50%;"></div>
         <div id="quietProgressBar" class="h-full bg-gradient-to-r from-quiet-500 to-quiet-400 rounded-r-full transition-all duration-200" style="width: 50%;"></div>
       </div>
@@ -1029,7 +1584,7 @@
     </div>
 
     <!-- Milestone timeline -->
-    <div class="mt-6 bg-violet-900/70 border border-violet-800 rounded-3xl p-5 sm:p-6 shadow-2xl">
+    <div class="stone-panel mt-6 bg-violet-900/70 border border-violet-800 rounded-3xl p-5 sm:p-6 shadow-2xl">
       <div class="flex items-center justify-between mb-3">
         <h3 class="font-display font-bold text-base text-slate-100">🐉 Dragon Journey This Session</h3>
         <span id="dragonRulesShort" class="hidden sm:inline text-xs text-slate-400">Grows every 5 quiet min · shrinks after 1 loud min</span>
@@ -1067,7 +1622,7 @@
           <p class="text-[11px] text-slate-400">Switch to Loud Time when the room gets noisy</p>
         </div>
         <button id="calibMicSwitch" type="button" role="switch" aria-checked="false" aria-label="Mic Auto-Switch"
-          class="flex items-center gap-2 shrink-0 text-xs font-bold text-slate-300">
+          class="no-plate flex items-center gap-2 shrink-0 text-xs font-bold text-slate-300">
           <span id="calibMicSwitchLabel">Off</span>
           <span id="calibMicSwitchTrack" class="relative w-12 h-7 rounded-full bg-violet-800 border border-violet-700 transition">
             <span id="calibMicSwitchKnob" class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-slate-400 shadow transition-all"></span>
@@ -1084,7 +1639,7 @@
           </span>
           <span id="modalLiveVolume" class="font-mono text-cyan-300 font-bold">0%</span>
         </div>
-        <div class="h-4 bg-violet-900 rounded-full overflow-hidden p-0.5 border border-violet-700 relative">
+        <div class="trough h-4 bg-violet-900 rounded-full overflow-hidden p-0.5 border border-violet-700 relative">
           <div id="modalNoiseBar" class="h-full bg-gradient-to-r from-emerald-400 via-amber-400 to-loud-500 rounded-full transition-all duration-75" style="width: 0%;"></div>
           <div id="modalThresholdLine" class="absolute top-0 bottom-0 w-1 bg-white shadow pointer-events-none" style="left: 30%;"></div>
         </div>
@@ -1189,21 +1744,21 @@
         <div id="galleryHybrids"></div>
       </div>
       <div class="mt-4 pt-3 border-t border-violet-800 flex items-center justify-between gap-2">
-        <p class="text-[11px] text-slate-500">Saved on this computer for each Class / Period name.</p>
-        <button id="clearGalleryBtn" class="text-xs px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-violet-700 font-semibold transition">Clear this class's gallery</button>
+        <p class="text-[11px] text-slate-500">Saved on this computer for each player.</p>
+        <button id="clearGalleryBtn" class="text-xs px-3 py-1.5 rounded-xl bg-violet-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-violet-700 font-semibold transition">Clear this gallery</button>
       </div>
     </div>
   </div>
 
-  <!-- CLASS LEADERBOARD -->
+  <!-- LEADERBOARD -->
   <div id="leaderboardModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
     <div class="bg-violet-900 border border-violet-700 rounded-3xl w-full max-w-3xl p-6 shadow-2xl relative max-h-[90vh] flex flex-col">
       <div class="flex items-center justify-between gap-3 pb-4 border-b border-violet-800">
         <div class="flex items-center gap-2">
           <span class="text-2xl">🏆</span>
           <div>
-            <h3 class="font-display font-bold text-lg sm:text-xl text-white">Class Leaderboard</h3>
-            <p class="text-xs text-slate-400">How every class on this computer is doing</p>
+            <h3 class="font-display font-bold text-lg sm:text-xl text-white">Leaderboard</h3>
+            <p class="text-xs text-slate-400">How every player on this computer is doing</p>
           </div>
         </div>
         <button id="closeLeaderboardBtn" class="shrink-0 flex items-center gap-1.5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-violet-800 transition"><span class="kbd" title="Press Esc to close">Esc</span><span>✕</span></button>
@@ -1228,18 +1783,21 @@
           <span class="text-2xl">📋</span>
           <div>
             <h3 class="font-display font-bold text-lg text-white">Classroom Session History</h3>
-            <p class="text-xs text-slate-400">Saved records of loud vs quiet ratios by class</p>
+            <p class="text-xs text-slate-400">Every session is saved here on its own. Reset the clocks to start a new one.</p>
           </div>
         </div>
         <button id="closeLogsBtn" class="flex items-center gap-1.5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-violet-800 transition"><span class="kbd" title="Press Esc to close">Esc</span><span>✕</span></button>
       </div>
 
+      <!-- Best scores across every saved session (built by renderLogsTable) -->
+      <div id="logBests" class="hidden mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2"></div>
+
       <!-- Log Table Area -->
-      <div class="flex-1 overflow-y-auto my-4 border border-violet-800 rounded-2xl bg-violet-950/80 p-2">
+      <div class="parchment flex-1 overflow-y-auto my-4 border border-violet-800 rounded-2xl bg-violet-950/80 p-2">
         <table class="w-full text-left text-xs font-sans">
           <thead class="text-slate-400 border-b border-violet-800 uppercase tracking-wider font-semibold">
             <tr>
-              <th class="py-2.5 px-3">Class Name</th>
+              <th class="py-2.5 px-3">Name</th>
               <th class="py-2.5 px-3">Date & Time</th>
               <th class="py-2.5 px-3">Duration</th>
               <th class="py-2.5 px-3">Loud %</th>
@@ -1249,7 +1807,7 @@
           </thead>
           <tbody id="logsTableBody" class="divide-y divide-violet-900 text-slate-200">
             <tr>
-              <td colspan="6" class="text-center py-6 text-slate-500 italic">No saved classes yet. Click "Save Current Session to Log" to record!</td>
+              <td colspan="6" class="text-center py-6 text-slate-500 italic">No sessions yet. Start the clocks and each session is saved here on its own.</td>
             </tr>
           </tbody>
         </table>
@@ -1328,7 +1886,7 @@
           </div>
           <div class="flex items-center justify-between gap-2 pt-1">
             <p id="dragonRulesSummary" class="text-[11px] text-slate-400"></p>
-            <button id="restartDragonBtn" type="button" class="shrink-0 text-[11px] px-2.5 py-1 rounded-lg bg-violet-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-violet-700 font-semibold" title="Starts this class's dragon over as a new egg. The Gallery is kept.">🥚 Start this class's dragon over</button>
+            <button id="restartDragonBtn" type="button" class="shrink-0 text-[11px] px-2.5 py-1 rounded-lg bg-violet-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-violet-700 font-semibold" title="Starts this dragon over as a new egg. The Gallery is kept.">🥚 Start this dragon over</button>
             <button id="dragonDefaultsBtn" type="button" class="shrink-0 text-[11px] px-2.5 py-1 rounded-lg bg-violet-800 hover:bg-violet-750 text-slate-300 border border-violet-700 font-semibold">Reset to defaults</button>
           </div>
         </div>
@@ -2001,6 +2559,9 @@
       loudTurns: 0,
       quietTurns: 0,
       totalSwitches: 0,
+      sessionId: 0,       // this session's row in the log (0 = nothing logged yet); a Reset starts a new one
+      quietRunMs: 0,      // the quiet streak running now (a pause doesn't break it, Loud Time does)
+      bestQuietRunMs: 0,  // longest quiet streak this session
 
       lastTimestamp: null,
       animationFrameId: null,
@@ -2016,9 +2577,9 @@
       dragonLevel: 0,
       dragonBest: 0,
       dragonFamily: 0,    // grown dragons that reached the final form and laid an egg
-      currentClass: '',   // the Class / Period whose dragon is on stage
-      classTotals: { quietMs: 0, loudMs: 0 }, // this class's all-time Quiet/Loud time
-      dragonBaseline: null, // the class's dragon when this session began (for recalculation)
+      currentClass: '',   // internal key (SOLO) of the dragon on stage; one per profile
+      classTotals: { quietMs: 0, loudMs: 0 }, // this profile's all-time Quiet/Loud time
+      dragonBaseline: null, // the profile's dragon when this session began (for recalculation)
       dragonLineage: [],  // every dragon this session in order: { species, crown, rarity }; the current one is [dragonFamily]
       speciesBag: [],     // dragon types not used yet in this round
       milestones: [], // { side, icon, label, clock } newest first
@@ -2318,6 +2879,10 @@
       dragonSvg: document.getElementById('dragonSvg'),
       dragonLevelNum: document.getElementById('dragonLevelNum'),
       dragonLevelName: document.getElementById('dragonLevelName'),
+      dragonNameBtn: document.getElementById('dragonNameBtn'),
+      dragonNameText: document.getElementById('dragonNameText'),
+      dragonNameForm: document.getElementById('dragonNameForm'),
+      dragonNameInput: document.getElementById('dragonNameInput'),
       dragonRarity: document.getElementById('dragonRarity'),
       dragonFamily: document.getElementById('dragonFamily'),
       dragonHearts: document.getElementById('dragonHearts'),
@@ -2372,9 +2937,9 @@
       totalSwitchesDisplay: document.getElementById('totalSwitchesDisplay'),
       currentModeLabel: document.getElementById('currentModeLabel'),
 
-      classNameInput: document.getElementById('classNameInput'),
       saveSessionBtn: document.getElementById('saveSessionBtn'),
       logBadge: document.getElementById('logBadge'),
+      logBests: document.getElementById('logBests'),
 
       // Logs modal
       logsModal: document.getElementById('logsModal'),
@@ -2479,9 +3044,13 @@
           if (last && last[0] === state.activeTimer) last[1] += delta;
           else state.dragonHistory.push([state.activeTimer, delta]);
 
-          if (state.activeTimer === 'loud') { state.loudElapsedMs += delta; state.classTotals.loudMs += delta; }
-          else if (state.activeTimer === 'quiet') { state.quietElapsedMs += delta; state.classTotals.quietMs += delta; }
-          // Save this class's dragon every few seconds while the timer runs
+          if (state.activeTimer === 'loud') { state.loudElapsedMs += delta; state.classTotals.loudMs += delta; state.quietRunMs = 0; }
+          else if (state.activeTimer === 'quiet') {
+            state.quietElapsedMs += delta; state.classTotals.quietMs += delta;
+            state.quietRunMs += delta;
+            if (state.quietRunMs > state.bestQuietRunMs) state.bestQuietRunMs = state.quietRunMs;
+          }
+          // Save this dragon every few seconds while the timer runs
           if (now - lastClassSave > 5000) { lastClassSave = now; saveCurrentClass(); }
           const dragonEvent = stepDragon(state, state.activeTimer, delta);
           if (dragonEvent === 'hide') dragonRanOff();
@@ -2577,9 +3146,14 @@
       updateDisplay();
     }
 
-    // Reset the clocks and this session's timeline. The class's dragon is kept
-    // (it's saved per class); use "Start this class's dragon over" in Settings for that.
+    // Reset the clocks and this session's timeline. The dragon is kept
+    // (it's saved per profile); use "Start this dragon over" in Settings for that.
     function resetAllTimers(quiet = false) {
+      // The session that just ended keeps its own row in the log; the next one gets a new row
+      logCurrentSession();
+      state.sessionId = 0;
+      state.quietRunMs = 0;
+      state.bestQuietRunMs = 0;
       state.activeTimer = null;
       state.loudElapsedMs = 0;
       state.quietElapsedMs = 0;
@@ -2872,7 +3446,7 @@
           sound.playLevelUp(drama);
           if (target === DRAGON_TOP_LEVEL) addToGallery(currentDragon());
           addMilestone('quiet', target === DRAGON_TOP_LEVEL ? '👑' : '🐉', `Level ${target + 1}: ${lvl.name}`);
-          showToast('quiet', miniDragon(target), lvl.title, lvl.sub);
+          showToast('quiet', miniDragon(target), nickOf(currentDragon()) && target === DRAGON_TOP_LEVEL ? `${escapeHtml(nickOf(currentDragon()))} · ${lvl.title}` : lvl.title, lvl.sub);
         } else {
           sound.playQuietMilestone();
           addMilestone('quiet', '🌱', `Grew back to ${lvl.name}`);
@@ -2966,6 +3540,52 @@
       return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
     }
 
+    // Custom dragon names (user input: always escaped before going into innerHTML)
+    const nickOf = (entry) => (entry && typeof entry.nick === 'string' ? entry.nick : '');
+    const cleanNick = (v) => String(v).replace(/\s+/g, ' ').trim().slice(0, 24);
+    const withNick = (entry, formName) => nickOf(entry) ? `${escapeHtml(nickOf(entry))} · ${escapeHtml(formName)}` : escapeHtml(formName);
+    function renderDragonName() {
+      if (!dom.dragonNameForm.classList.contains('flex')) { // leave the box alone while typing
+        const nick = nickOf(currentDragon());
+        dom.dragonNameText.textContent = nick || 'Name your dragon';
+        dom.dragonNameBtn.classList.toggle('opacity-80', !nick);
+        dom.dragonNameBtn.classList.toggle('font-display', !!nick);
+        dom.dragonNameBtn.classList.toggle('text-lg', !!nick);
+        dom.dragonNameBtn.title = nick ? `${nick}. Click to rename.` : 'Give this dragon a name';
+      }
+    }
+    function editDragonName(on, save) {
+      const form = dom.dragonNameForm;
+      if (!on) {
+        if (!form.classList.contains('flex')) return;
+        if (save) {
+          const v = cleanNick(dom.dragonNameInput.value);
+          const entry = currentDragon();
+          if (v) entry.nick = v; else delete entry.nick;
+          syncGalleryNick(entry); // a Queen already in the Gallery takes the new name too
+          saveCurrentClass();
+        }
+        form.classList.remove('flex'); form.classList.add('hidden');
+        dom.dragonNameBtn.classList.remove('hidden');
+        renderDragonName();
+        if (document.getElementById('galleryModal') && !dom.galleryModal.classList.contains('hidden')) renderGallery();
+        return;
+      }
+      dom.dragonNameInput.value = nickOf(currentDragon());
+      dom.dragonNameBtn.classList.add('hidden');
+      form.classList.remove('hidden'); form.classList.add('flex');
+      dom.dragonNameInput.focus(); dom.dragonNameInput.select();
+    }
+    function setupDragonName() {
+      dom.dragonNameBtn.addEventListener('click', () => editDragonName(true));
+      dom.dragonNameForm.addEventListener('submit', (e) => { e.preventDefault(); editDragonName(false, true); });
+      dom.dragonNameInput.addEventListener('keydown', (e) => {
+        e.stopPropagation(); // Space, R, F… are typing here, not hotkeys
+        if (e.key === 'Escape') editDragonName(false, false);
+      });
+      dom.dragonNameInput.addEventListener('blur', () => editDragonName(false, true));
+    }
+
     function renderDragon() {
       const level = state.dragonLevel;
       const stars = artStars(level);
@@ -2999,6 +3619,7 @@
         <div class="-mt-1"><span class="inline-block px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-violet-950/80 text-pink-300 border border-pink-500/50 whitespace-nowrap">👑 Family${fam > 1 ? ` ×${fam}` : ''}</span></div>` : '';
       const title = levelInfo(level, entry).name;
       dom.dragonLevelName.textContent = title;
+      renderDragonName();
       // Long names ("Young Lightning Dragon") get a smaller title so they stay on one line
       dom.dragonLevelName.classList.toggle('dg-long-name', title.length > 16);
       dom.dragonLevelName.classList.toggle('dg-xlong-name', title.length > 20);
@@ -3552,44 +4173,61 @@
     /* ==========================================================================
        CLASS SESSION LOGGING
        ========================================================================== */
-    function saveCurrentClassSession() {
-      const className = dom.classNameInput.value.trim() || 'Untitled Class';
+    // Every session (from one Reset to the next) gets its own row. The row is written
+    // automatically while the clocks run and updated in place, so nothing is lost if the
+    // tab is closed. Returns false when there is nothing to log yet.
+    function logCurrentSession() {
       const totalTimeMs = state.loudElapsedMs + state.quietElapsedMs;
-
-      if (totalTimeMs < 1000) {
-        // Show brief visual feedback if nothing tracked yet
-        dom.saveSessionBtn.textContent = '⚠️ Timer is 0s';
-        setTimeout(() => { dom.saveSessionBtn.innerHTML = '💾 Save Current Session to Log'; }, 1500);
-        return;
+      if (totalTimeMs < 1000) return false;
+      if (!state.sessionId) {
+        let id = Date.now();
+        while (state.classLogs.some(l => l.id === id)) id++; // never reuse another row's id
+        state.sessionId = id;
       }
 
-      let loudPercent = 50;
-      let quietPercent = 50;
-      if (totalTimeMs > 0) {
-        loudPercent = ((state.loudElapsedMs / totalTimeMs) * 100).toFixed(1);
-        quietPercent = ((state.quietElapsedMs / totalTimeMs) * 100).toFixed(1);
-      }
+      const loudPercent = ((state.loudElapsedMs / totalTimeMs) * 100).toFixed(1);
+      const quietPercent = ((state.quietElapsedMs / totalTimeMs) * 100).toFixed(1);
+      // What the dragon did in this session alone (the dragon itself carries on between sessions)
+      const base = state.dragonBaseline || {};
+      const queens = Math.max(0, state.dragonFamily - (base.dragonFamily || 0));
+      const grown = Math.max(0, queens * DRAGON_MAX_PROGRESS + state.dragonProgress - (base.dragonProgress || 0));
 
-      const newLog = {
-        id: Date.now(),
-        className: className,
-        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }),
+      const log = {
+        id: state.sessionId,
+        className: profileName(),
+        date: new Date(state.sessionId).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }),
         duration: formatTime(totalTimeMs, false),
         loudShare: `${loudPercent}%`,
         quietShare: `${quietPercent}%`,
+        // Plain numbers, for the "Best scores" at the top of the log
+        quietMs: Math.round(state.quietElapsedMs),
+        loudMs: Math.round(state.loudElapsedMs),
+        streakMs: Math.round(state.bestQuietRunMs),
+        switches: state.totalSwitches,
+        queens,
+        grown: Math.round(grown * 100) / 100,
         dragonBest: state.dragonFamily > 0 ? state.dragonLineage.slice(0, state.dragonFamily).map(royalName).join(', ') : levelName(state.dragonBest),
         dragonFamily: state.dragonFamily,
         dragonFinal: levelName(state.dragonLevel)
       };
 
-      state.classLogs.unshift(newLog);
+      const i = state.classLogs.findIndex(l => l.id === log.id);
+      if (i >= 0) state.classLogs[i] = log; else state.classLogs.unshift(log);
       saveLogs();
       renderLogsTable();
+      return true;
+    }
 
+    // The Save button: sessions are logged on their own, this just does it right now
+    function saveCurrentClassSession() {
+      if (!logCurrentSession()) {
+        // Show brief visual feedback if nothing tracked yet
+        dom.saveSessionBtn.textContent = '⚠️ Timer is 0s';
+        setTimeout(() => { dom.saveSessionBtn.innerHTML = '💾 Save Current Session to Log'; }, 1500);
+        return;
+      }
+      saveSession(); // the session's id goes with the clocks
       dom.saveSessionBtn.innerHTML = '✅ Saved!';
-      dom.logBadge.classList.remove('hidden');
-      dom.logBadge.textContent = state.classLogs.length;
-
       setTimeout(() => {
         dom.saveSessionBtn.innerHTML = '💾 Save Current Session to Log';
       }, 1600);
@@ -3607,9 +4245,51 @@
       try { localStorage.setItem(LOGS_KEY, JSON.stringify(state.classLogs)); } catch (e) {}
     }
 
+    // Numbers for one log row. Rows saved before sessions were logged automatically only
+    // have text, so work the times out from that (they have no quiet streak or growth).
+    function logNumbers(log) {
+      let totalMs, quietMs;
+      if (typeof log.quietMs === 'number' && typeof log.loudMs === 'number') {
+        quietMs = log.quietMs; totalMs = log.quietMs + log.loudMs;
+      } else {
+        const secs = String(log.duration || '').split(':').reduce((sum, part) => sum * 60 + (parseInt(part, 10) || 0), 0);
+        totalMs = secs * 1000;
+        quietMs = totalMs * (parseFloat(log.quietShare) || 0) / 100;
+      }
+      return { totalMs, quietMs, quietPct: totalMs > 0 ? (quietMs / totalMs) * 100 : 0, streakMs: log.streakMs || 0, grown: log.grown || 0 };
+    }
+    // The best score in each category, and which session holds it
+    const LOG_BESTS = [
+      { key: 'quiet',  icon: '🤫', label: 'Most Quiet Time',      value: n => n.quietMs,  show: n => formatTime(n.quietMs, false) },
+      { key: 'pct',    icon: '📈', label: 'Best Quiet %',         value: n => n.totalMs >= 60000 ? n.quietPct : 0, show: n => `${n.quietPct.toFixed(1)}%` }, // needs a minute of data
+      { key: 'streak', icon: '🔥', label: 'Longest Streak', value: n => n.streakMs, show: n => formatTime(n.streakMs, false) },
+      { key: 'grown',  icon: '🐉', label: 'Most Growth', value: n => n.grown,    show: n => `+${n.grown.toFixed(1)} level${n.grown.toFixed(1) === '1.0' ? '' : 's'}` },
+    ];
+    function logBests() {
+      return LOG_BESTS.map(b => {
+        let top = null;
+        state.classLogs.forEach(log => {
+          const n = logNumbers(log), v = b.value(n);
+          if (v > 0 && (!top || v > top.v)) top = { v, n, log };
+        });
+        return top ? { ...b, ...top } : null;
+      }).filter(Boolean);
+    }
+
     function renderLogsTable() {
+      const bests = logBests();
+      if (dom.logBests) {
+        dom.logBests.classList.toggle('hidden', bests.length === 0);
+        dom.logBests.innerHTML = bests.map(b => `
+          <div class="rounded-xl border border-violet-700 bg-violet-950/70 px-3 py-2 min-w-0">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-tight">${b.icon} ${b.label}</div>
+            <div class="font-display font-bold text-lg text-quiet-300 leading-tight">${b.show(b.n)}</div>
+            <div class="text-[10px] text-slate-400 truncate">${escapeHtml(String(b.log.date || ''))}</div>
+          </div>`).join('');
+      }
+
       if (state.classLogs.length === 0) {
-        dom.logsTableBody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-500 italic">No saved classes yet.</td></tr>`;
+        dom.logsTableBody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-500 italic">No sessions yet. Start the clocks and each session is saved here on its own.</td></tr>`;
         dom.logBadge.classList.add('hidden');
         return;
       }
@@ -3617,16 +4297,20 @@
       dom.logBadge.classList.remove('hidden');
       dom.logBadge.textContent = state.classLogs.length;
 
-      dom.logsTableBody.innerHTML = state.classLogs.map(log => `
+      dom.logsTableBody.innerHTML = state.classLogs.map(log => {
+        const held = bests.filter(b => b.log === log);
+        const trophies = held.length ? `<span class="ml-1 whitespace-nowrap" title="Best score: ${held.map(b => b.label).join(', ')}">🏆${held.map(b => b.icon).join('')}</span>` : '';
+        const live = log.id === state.sessionId ? `<div class="text-[10px] font-bold text-quiet-300 whitespace-nowrap">● This session</div>` : '';
+        return `
         <tr class="hover:bg-violet-850/60 transition">
-          <td class="py-2.5 px-3 font-semibold text-white">${escapeHtml(log.className)}</td>
-          <td class="py-2.5 px-3 text-slate-400">${log.date}</td>
+          <td class="py-2.5 px-3 font-semibold text-white">${escapeHtml(log.className)}${trophies}</td>
+          <td class="py-2.5 px-3 text-slate-400">${log.date}${live}</td>
           <td class="py-2.5 px-3 font-mono font-bold">${log.duration}</td>
           <td class="py-2.5 px-3 font-mono font-bold text-loud-400">${log.loudShare}</td>
-          <td class="py-2.5 px-3 font-mono font-bold text-quiet-300">${log.quietShare}</td>
-          <td class="py-2.5 px-3 font-semibold"><div class="text-quiet-300">🏆 ${log.dragonFamily ? 'Raised' : 'Best'}: ${log.dragonBest}</div>${log.dragonFamily ? `<div class="text-xs text-pink-300 whitespace-nowrap">👑 Dragons raised: ${log.dragonFamily}</div>` : ''}<div class="text-xs text-slate-400 whitespace-nowrap">Ended as: ${log.dragonFamily ? `Dragon #${log.dragonFamily + 1}, ` : ''}${log.dragonFinal}</div></td>
-        </tr>
-      `).join('');
+          <td class="py-2.5 px-3 font-mono font-bold text-quiet-300">${log.quietShare}${log.streakMs ? `<div class="text-[10px] font-sans font-semibold text-slate-400 whitespace-nowrap">🔥 ${formatTime(log.streakMs, false)} streak</div>` : ''}</td>
+          <td class="py-2.5 px-3 font-semibold"><div class="text-quiet-300">🏆 ${log.dragonFamily ? 'Raised' : 'Best'}: ${log.dragonBest}</div>${log.grown ? `<div class="text-xs text-quiet-300 whitespace-nowrap">🌱 Grew +${Number(log.grown).toFixed(1)} levels${log.queens ? ` · 👑 ${log.queens} new` : ''}</div>` : ''}${log.dragonFamily ? `<div class="text-xs text-pink-300 whitespace-nowrap">👑 Dragons raised: ${log.dragonFamily}</div>` : ''}<div class="text-xs text-slate-400 whitespace-nowrap">Ended as: ${log.dragonFamily ? `Dragon #${log.dragonFamily + 1}, ` : ''}${log.dragonFinal}</div></td>
+        </tr>`;
+      }).join('');
     }
 
     function escapeHtml(str) {
@@ -3886,7 +4570,7 @@
       });
       dom.clearLogsBtn.addEventListener('click', () => {
         if (state.classLogs.length === 0) return;
-        if (!confirm('Delete all saved classes from the log? This can\'t be undone.')) return;
+        if (!confirm('Delete every saved session and best score from the log? This can\'t be undone.')) return;
         state.classLogs = [];
         saveLogs();
         renderLogsTable();
@@ -4020,20 +4704,20 @@
       renderMilestones();
       renderDragonSettings();
       renderSilencePicker();
-      // Open the class used last time, with its own dragon
-      let lastClass = '';
-      try { lastClass = localStorage.getItem('quietloud-last-class') || ''; } catch (e) {}
-      loadClass(lastClass || dom.classNameInput.value.trim() || 'Untitled Class');
+      // Open this profile's dragon (each profile has its own saved data)
+      setupDragonName();
+      loadClass();
       restoreSession();
-      dom.classNameInput.addEventListener('change', () => switchClass(dom.classNameInput.value));
-      dom.classNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') dom.classNameInput.blur(); });
       document.getElementById('restartDragonBtn').addEventListener('click', restartClassDragon);
       document.getElementById('leaderboardBtn').addEventListener('click', openLeaderboard);
       document.getElementById('closeLeaderboardBtn').addEventListener('click', closeLeaderboard);
       window.addEventListener('pagehide', saveCurrentClass);
       document.addEventListener('visibilitychange', () => { if (document.hidden) saveCurrentClass(); });
-      setTheme(document.documentElement.dataset.theme || 'galaxy', false);
-      setAppearance(document.documentElement.dataset.appearance || 'auto', false);
+      // (read the saved appearance first: setTheme re-applies the colors and would otherwise reset it to Auto)
+      const startAppearance = document.documentElement.dataset.appearance || 'auto';
+      currentAppearance = startAppearance;
+      setTheme(document.documentElement.dataset.theme || 'dungeon', false);
+      setAppearance(startAppearance, false);
       document.querySelectorAll('.appearance-btn').forEach(btn => {
         btn.addEventListener('click', () => setAppearance(btn.dataset.appearance));
       });
@@ -4185,8 +4869,16 @@
     }
 
     /* ==========================================================================
-       CLASSES: each Class / Period has its own dragon, saved on this computer
+       DRAGON SAVES: each profile has one dragon, saved on this computer.
+       The saved maps are keyed by SOLO (never by the profile's display name, so
+       renaming a profile can't orphan its data).
        ========================================================================== */
+    const SOLO = 'main';
+    // Who's playing, read live (a rename in the picker is picked up right away)
+    const profileName = () => {
+      const p = window.playerProfiles && window.playerProfiles.current();
+      return (p && p.name) || 'My class';
+    };
     const CLASSES_KEY = 'quietloud-classes';
     const DRAGON_FIELDS = ['dragonProgress', 'dragonLevel', 'dragonBest', 'dragonFamily', 'dragonLineage', 'speciesBag', 'dragonHearts', 'dragonHiding', 'dragonCoaxMs'];
     let lastClassSave = 0;
@@ -4212,15 +4904,15 @@
       const all = loadClasses();
       all[state.currentClass] = { dragon: snapshotDragon(), totals: state.classTotals, updated: Date.now() };
       saveClasses(all);
-      try { localStorage.setItem('quietloud-last-class', state.currentClass); } catch (e) {}
+      logCurrentSession(); // keep this session's row in the log up to date (before saveSession: it may hand out the session's id)
       saveSession();
     }
 
     // PICK UP WHERE YOU LEFT OFF: the clocks of the current session are saved with the
-    // class's dragon (same moment, so they always match) and come back paused next time
+    // dragon (same moment, so they always match) and come back paused next time
     const SESSION_KEY = 'quietloud-session';
     const SESSION_FIELDS = ['loudElapsedMs', 'quietElapsedMs', 'loudTurns', 'quietTurns', 'totalSwitches', 'lastActiveSide',
-      'milestones', 'dragonHistory', 'dragonBaseline', 'dragonGraceMs', 'mode', 'countdownDuration'];
+      'sessionId', 'quietRunMs', 'bestQuietRunMs', 'milestones', 'dragonHistory', 'dragonBaseline', 'dragonGraceMs', 'mode', 'countdownDuration'];
     function saveSession() {
       const snap = { cls: state.currentClass, saved: Date.now() };
       SESSION_FIELDS.forEach(k => { snap[k] = state[k]; });
@@ -4245,51 +4937,32 @@
       applyVisualState();
       updateDisplay();
     }
-    // Load a class's dragon (a new class starts with a fresh egg)
-    function loadClass(name) {
-      const saved = loadClasses()[name];
-      state.currentClass = name;
+    // Load this profile's dragon (a new profile starts with a fresh egg)
+    function loadClass() {
+      const saved = loadClasses()[SOLO];
+      state.currentClass = SOLO;
       Object.assign(state, freshDragon(), saved ? JSON.parse(JSON.stringify(saved.dragon)) : {});
       state.dragonHearts = Math.min(state.dragonHearts, dragonSettings.hearts);
       state.classTotals = saved && saved.totals ? { ...saved.totals } : { quietMs: 0, loudMs: 0 };
       state.dragonHistory = [];
       state.dragonGraceMs = 0;
       state.dragonBaseline = snapshotDragon();
-      dom.classNameInput.value = name;
       renderDragon();
       updateDragonMood();
-      renderClassList();
-    }
-    // Switching classes: save this one, start fresh clocks, load the other class's dragon
-    function switchClass(name) {
-      name = name.trim() || 'Untitled Class';
-      if (name === state.currentClass) { dom.classNameInput.value = name; return; }
-      const isNew = !loadClasses()[name];
-      saveCurrentClass();
-      state.activeTimer = null;
-      loadClass(name);
-      resetAllTimers(true);
-      const now = levelInfo(state.dragonLevel, currentDragon()).name;
-      showToast('quiet', miniDragon(state.dragonLevel, currentDragon()), isNew ? `Welcome, ${escapeHtml(name)}!` : `Switched to ${escapeHtml(name)}`,
-        isNew ? 'A brand-new egg is waiting for your class.' : `Your dragon: ${now}`);
-      saveCurrentClass();
     }
     function restartClassDragon() {
-      if (!confirm(`Start ${state.currentClass}'s dragon over as a new egg? Its Gallery is kept.`)) return;
+      if (!confirm(`Start ${profileName()}'s dragon over as a new egg? Its Gallery is kept.`)) return;
+      resetAllTimers(true); // first, so the session that just ended is logged with the old dragon
       Object.assign(state, freshDragon());
-      resetAllTimers(true);
-      addMilestone('quiet', '🥚', 'A brand-new egg for this class!');
-    }
-    // Class names for the suggestions list (saved dragons and galleries)
-    function allClassNames() {
-      return [...new Set([...Object.keys(loadClasses()), ...Object.keys(loadGallery())])].sort((a, b) => a.localeCompare(b));
-    }
-    function renderClassList() {
-      document.getElementById('classNameList').innerHTML = allClassNames().map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+      state.dragonBaseline = snapshotDragon();
+      renderDragon();
+      updateDragonMood();
+      addMilestone('quiet', '🥚', 'A brand-new egg!');
+      saveCurrentClass();
     }
 
     /* ==========================================================================
-       CLASS LEADERBOARD
+       LEADERBOARD (compares the profiles on this computer)
        ========================================================================== */
     const LEADERBOARD_TABS = {
       queens: { label: '👑 Most Queens', value: r => r.queens, show: r => `${r.queens} Queen${r.queens === 1 ? '' : 's'}` },
@@ -4298,18 +4971,25 @@
     };
     let leaderboardTab = 'queens';
 
-    function classRows() {
+    function profileRows() {
       saveCurrentClass();
-      const classes = loadClasses(), gallery = loadGallery();
-      return allClassNames().map(name => {
-        const list = gallery[name] || [];
-        const saved = classes[name];
+      const P = window.playerProfiles;
+      const meId = P && P.current() ? P.current().id : '';
+      const people = P && P.list().length
+        ? P.list().map(p => ({ ...p, me: p.id === meId, read: k => P.read(p.id, k) }))
+        : [{ name: profileName(), avatar: '🐉', me: true, read: k => localStorage.getItem(k) }]; // no profiles (storage blocked)
+      const readMap = (person, key) => {
+        try { const v = JSON.parse(person.read(key) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; }
+      };
+      return people.map(person => {
+        const list = readMap(person, GALLERY_KEY)[SOLO] || [];
+        const saved = readMap(person, CLASSES_KEY)[SOLO];
         const totals = saved && saved.totals ? saved.totals : { quietMs: 0, loudMs: 0 };
         const total = totals.quietMs + totals.loudMs;
         const d = saved ? saved.dragon : null;
         const entry = d && d.dragonLineage && d.dragonLineage[d.dragonFamily];
         return {
-          name, queens: list.length,
+          name: person.name, avatar: person.avatar, me: person.me, queens: list.length,
           types: new Set(list.filter(e => !e.mix).map(e => e.species)).size,
           hybrids: new Set(list.filter(e => e.mix).map(dragonKey)).size,
           calm: total >= 60000 ? (totals.quietMs / total) * 100 : null, // needs a minute of data
@@ -4322,43 +5002,24 @@
       document.getElementById('leaderboardTabs').innerHTML = Object.entries(LEADERBOARD_TABS).map(([key, t]) =>
         `<button type="button" data-lb-tab="${key}" class="py-2 rounded-xl border-2 text-sm font-bold transition ${key === leaderboardTab ? 'bg-amber-400/20 text-amber-200 border-amber-400' : 'bg-violet-800 text-slate-300 border-violet-700 hover:bg-violet-750'}">${t.label}</button>`).join('');
       const tab = LEADERBOARD_TABS[leaderboardTab];
-      const rows = classRows().sort((a, b) => tab.value(b) - tab.value(a) || b.queens - a.queens || b.level - a.level || a.name.localeCompare(b.name));
+      const rows = profileRows().sort((a, b) => tab.value(b) - tab.value(a) || b.queens - a.queens || b.level - a.level || a.name.localeCompare(b.name));
       const medals = ['🥇', '🥈', '🥉'];
       document.getElementById('leaderboardList').innerHTML = rows.length === 0
-        ? '<p class="text-slate-500 italic">No classes yet.</p>'
+        ? '<p class="text-slate-500 italic">No players yet.</p>'
         : rows.map((r, i) => {
-          const me = r.name === state.currentClass;
+          const me = r.me;
           const dragonName = r.entry ? levelInfo(r.level, r.entry).name : 'Dragon Egg';
           return `<div class="flex items-center gap-3 rounded-2xl border-2 px-3 py-2 ${me ? 'border-quiet-400 bg-quiet-500/10' : 'border-violet-700 bg-violet-950/50'}">
             <div class="w-9 text-center font-display font-bold text-2xl ${i < 3 ? '' : 'text-slate-400 text-lg'}">${i < 3 ? medals[i] : i + 1}</div>
             <svg viewBox="${r.level >= 2 ? '-10 -20 260 260' : '40 70 160 160'}" class="w-16 h-16 shrink-0 overflow-visible">${r.entry ? awakeArt(r.level, r.entry) : awakeArt(0, { species: 'volcano' })}</svg>
             <div class="flex-1 min-w-0">
-              <div class="font-display font-bold text-white truncate">${escapeHtml(r.name)}${me ? ' <span class="text-xs text-quiet-300">(on stage)</span>' : ''}</div>
-              <div class="text-[11px] text-slate-400 truncate">Now raising: ${dragonName} · 👑 ${r.queens} · 🐉 ${r.types}/${SPECIES_KEYS.length} · 🧪 ${r.hybrids}</div>
+              <div class="font-display font-bold text-white truncate"><span aria-hidden="true">${escapeHtml(r.avatar || '')}</span> ${escapeHtml(r.name)}${me ? ' <span class="text-xs text-quiet-300">(on stage)</span>' : ''}</div>
+              <div class="text-[11px] text-slate-400 truncate">Now raising: ${r.entry ? withNick(r.entry, dragonName) : escapeHtml(dragonName)} · 👑 ${r.queens} · 🐉 ${r.types}/${SPECIES_KEYS.length} · 🧪 ${r.hybrids}</div>
             </div>
             <div class="shrink-0 text-right font-bold text-amber-200 text-sm">${tab.show(r)}</div>
-            <button type="button" data-delete-class="${escapeHtml(r.name)}" title="Delete ${escapeHtml(r.name)}" aria-label="Delete ${escapeHtml(r.name)}" class="shrink-0 w-8 h-8 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-900/40 transition">🗑</button>
           </div>`;
         }).join('');
       document.querySelectorAll('[data-lb-tab]').forEach(btn => btn.addEventListener('click', () => { leaderboardTab = btn.dataset.lbTab; renderLeaderboard(); }));
-      document.querySelectorAll('[data-delete-class]').forEach(btn => btn.addEventListener('click', () => deleteClass(btn.dataset.deleteClass)));
-    }
-    // Delete a class: its saved dragon and Gallery (Classes Log records are kept)
-    function deleteClass(name) {
-      if (!confirm(`Delete "${name}"?\n\nThis removes its dragon and its Dragon Gallery for good. Saved records in the Classes Log are kept.`)) return;
-      const classes = loadClasses(); delete classes[name]; saveClasses(classes);
-      const gallery = loadGallery(); delete gallery[name]; saveGallery(gallery);
-      if (name === state.currentClass) {
-        // Don't save the deleted class again; move to another class (or a fresh one)
-        state.currentClass = '';
-        state.activeTimer = null;
-        const next = allClassNames()[0] || 'Room 101';
-        loadClass(next);
-        resetAllTimers(true);
-        showToast('quiet', miniDragon(state.dragonLevel, currentDragon()), `Deleted ${escapeHtml(name)}`, `Now on stage: ${escapeHtml(next)}`);
-      }
-      renderClassList();
-      renderLeaderboard();
     }
 
     function openLeaderboard() {
@@ -4372,10 +5033,10 @@
     }
 
     /* ==========================================================================
-       DRAGON GALLERY (per class name, saved in this browser)
+       DRAGON GALLERY (one per profile, saved in this browser)
        ========================================================================== */
     const GALLERY_KEY = 'quietloud-gallery';
-    const galleryClass = () => state.currentClass;
+    const galleryClass = () => SOLO;
     function loadGallery() {
       try {
         const all = JSON.parse(localStorage.getItem(GALLERY_KEY) || '{}');
@@ -4385,18 +5046,73 @@
     function saveGallery(all) {
       try { localStorage.setItem(GALLERY_KEY, JSON.stringify(all)); } catch (e) {}
     }
-    // Called when a dragon reaches its final form
+    // Called when a dragon reaches its final form. The Gallery copy and the dragon on
+    // stage share a "gid", so naming one names the other.
     function addToGallery(entry) {
       const all = loadGallery();
       const cls = galleryClass();
-      (all[cls] = all[cls] || []).push({ species: entry.species, ...(entry.mix ? { mix: entry.mix, feats: featsOf(entry), gen: genOf(entry), ...(entry.parents ? { parents: entry.parents } : {}) } : {}), crown: entry.crown, rarity: entry.rarity || 'common', date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) });
+      const list = (all[cls] = all[cls] || []);
+      if (!entry.gid) entry.gid = newGid();
+      if (list.some(e => e.gid === entry.gid)) return;
+      list.push({ gid: entry.gid, species: entry.species, ...(entry.mix ? { mix: entry.mix, feats: featsOf(entry), gen: genOf(entry), ...(entry.parents ? { parents: entry.parents } : {}) } : {}), ...(nickOf(entry) ? { nick: nickOf(entry) } : {}), crown: entry.crown, rarity: entry.rarity || 'common', date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) });
       saveGallery(all);
+    }
+
+    // Where a dragon from this session sits in the Gallery list (-1 = not there).
+    // Queens saved before gids existed are matched while they are still on stage.
+    function galleryIndexOf(entry, list) {
+      if (!entry) return -1;
+      if (entry.gid) return list.findIndex(e => e.gid === entry.gid);
+      if (entry !== state.dragonLineage[state.dragonFamily] || state.dragonLevel < DRAGON_TOP_LEVEL) return -1;
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (!list[i].gid && dragonKey(list[i]) === dragonKey(entry) && (list[i].rarity || 'common') === (entry.rarity || 'common')) return i;
+      }
+      return -1;
+    }
+    const newGid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    // The dragon on stage was renamed: its Gallery copy (if it is a Queen already) follows
+    function syncGalleryNick(entry) {
+      const all = loadGallery();
+      const list = all[galleryClass()] || [];
+      const i = galleryIndexOf(entry, list);
+      if (i < 0) return;
+      if (!entry.gid) entry.gid = list[i].gid = newGid();
+      if (nickOf(entry)) list[i].nick = nickOf(entry); else delete list[i].nick;
+      saveGallery(all);
+    }
+    // A Queen in the Gallery was (re)named: the same dragon in this session follows
+    function renameGalleryDragon(index, nick) {
+      const all = loadGallery();
+      const list = all[galleryClass()] || [];
+      const rec = list[index];
+      if (!rec) return;
+      if (!rec.gid) { // an older Queen: link it to the dragon on stage if that's the one
+        const cur = state.dragonLineage[state.dragonFamily];
+        if (cur && !cur.gid && galleryIndexOf(cur, list) === index) cur.gid = rec.gid = newGid();
+      }
+      if (nick) rec.nick = nick; else delete rec.nick;
+      saveGallery(all);
+      if (rec.gid) {
+        const twin = state.dragonLineage.find(e => e && e.gid === rec.gid);
+        if (twin) {
+          if (nick) twin.nick = nick; else delete twin.nick;
+          saveCurrentClass();
+          renderDragonName();
+        }
+      }
+    }
+    // Every Queen of one type, rarest first (same order as the Gallery), with its place in the saved list
+    function galleryQueens(key) {
+      return (loadGallery()[galleryClass()] || [])
+        .map((e, index) => ({ e, index }))
+        .filter(q => dragonKey(q.e) === key)
+        .sort((x, y) => RARITY_KEYS.indexOf(x.e.rarity || 'common') - RARITY_KEYS.indexOf(y.e.rarity || 'common'));
     }
 
     // Blend mode: pick two discovered types in the Gallery
     const galleryBlend = { on: false, picks: [] };
 
-    // The class's dragons grouped by type (or hybrid), rarest first
+    // This profile's dragons grouped by type (or hybrid), rarest first
     function galleryGroups(list) {
       const groups = {};
       list.forEach(e => {
@@ -4423,6 +5139,7 @@
         <div class="text-xs font-bold text-pink-300">👑 ${mine.length} Queen${mine.length === 1 ? '' : 's'}</div>
         <div class="my-1">Rarest: ${rarityPill(rarityOf(best))}</div>
         <div class="text-[11px] text-slate-400">First raised ${mine.first || ''}</div>
+        ${mine.some(e => nickOf(e)) ? `<div class="text-[11px] font-semibold text-pink-200 mt-0.5 max-w-full truncate" title="${escapeHtml(mine.filter(e => nickOf(e)).map(nickOf).join(', '))}">✨ ${mine.filter(e => nickOf(e)).map(e => escapeHtml(nickOf(e))).join(', ')}</div>` : ''}
         ${growTag}
       </button>`;
     }
@@ -4433,10 +5150,10 @@
       const groups = galleryGroups(list);
       const found = SPECIES_KEYS.filter(k => groups[k]).length;
       const hybridKeys = Object.keys(groups).filter(k => k.includes('+'));
-      document.getElementById('galleryTitle').textContent = `${cls}'s Dragon Gallery`;
+      document.getElementById('galleryTitle').textContent = `${profileName()}'s Dragon Gallery`;
       document.getElementById('gallerySummary').textContent = list.length === 0
         ? 'No dragons yet. Raise a dragon all the way to Queen to add it here!'
-        : `${found} of ${SPECIES_KEYS.length} dragon types discovered${hybridKeys.length ? ` · ${hybridKeys.length} hybrid${hybridKeys.length === 1 ? '' : 's'}` : ''} · ${list.length} dragon${list.length === 1 ? '' : 's'} raised · tap a dragon to see its card`;
+        : `${found} of ${SPECIES_KEYS.length} dragon types discovered${hybridKeys.length ? ` · ${hybridKeys.length} hybrid${hybridKeys.length === 1 ? '' : 's'}` : ''} · ${list.length} dragon${list.length === 1 ? '' : 's'} raised · tap a dragon to see its card and name it`;
 
       // The dragon being raised right now, at its current level
       const now = currentDragon(), nowLevel = state.dragonLevel, hatched = nowLevel > 0;
@@ -4449,7 +5166,7 @@
           <svg viewBox="-20 -40 280 290" class="w-24 sm:w-28 h-auto shrink-0 overflow-visible">${awakeArt(nowLevel, now)}</svg>
           <div class="min-w-0">
             <div class="text-xs font-bold uppercase tracking-widest text-quiet-300">🌱 Now raising${state.dragonFamily > 0 ? ` · Dragon #${state.dragonFamily + 1}` : ''}</div>
-            <div class="font-display font-bold text-xl sm:text-2xl text-white leading-tight">${nowInfo.name}</div>
+            <div class="font-display font-bold text-xl sm:text-2xl text-white leading-tight">${withNick(now, nowInfo.name)}</div>
             <div class="my-1">${rarityPill(rarityOf(now))}</div>
             <div class="text-sm text-slate-300">${hatched ? `Level ${nowLevel + 1} · keep it quiet to raise it to ${nowSp.short} Queen!` : (now.mix ? 'A hybrid egg… what will it look like?' : 'A mystery egg… what kind of dragon will hatch?')}</div>
             ${queued}
@@ -4549,6 +5266,8 @@
       const name = speciesOf(entry).name;
       // (messages below read "a/an <name>")
       if (state.dragonLevel === 0 && !state.dragonHiding) {
+        const was = state.dragonLineage[state.dragonFamily];
+        if (nickOf(was)) entry.nick = was.nick; // the egg keeps its name when it turns hybrid
         state.dragonLineage[state.dragonFamily] = entry;
         renderDragon();
         replayAnimation(dom.dragonWrap, 'dg-evolve', 1200);
@@ -4571,7 +5290,7 @@
     // Card for a type (or hybrid) the class has raised: every form, Egg to Queen
     function openDragonCard(key, mine) {
       if (!mine || !mine.length) return;
-      cardView = { entry: mine[0], level: DRAGON_TOP_LEVEL, maxLevel: DRAGON_TOP_LEVEL, raised: true, count: mine.length, first: mine.first || '' };
+      cardView = { key, editing: -1, entry: mine[0], names: mine.filter(e => nickOf(e)).map(nickOf), level: DRAGON_TOP_LEVEL, maxLevel: DRAGON_TOP_LEVEL, raised: true, count: mine.length, first: mine.first || '' };
       renderDragonCard();
       dom.cardModal.classList.remove('hidden');
       dom.cardModal.classList.add('flex');
@@ -4590,6 +5309,13 @@
     }
 
     function renderDragonCard() {
+      // A raised type is read fresh from the Gallery, so a new name shows right away
+      const queens = cardView.raised && cardView.key ? galleryQueens(cardView.key) : [];
+      if (queens.length) {
+        cardView.entry = queens[0].e;
+        cardView.names = queens.filter(q => nickOf(q.e)).map(q => nickOf(q.e));
+        cardView.count = queens.length;
+      }
       const { entry: best, level, maxLevel, raised } = cardView;
       // An egg that hasn't hatched yet keeps its type a secret
       const mystery = !raised && level === 0;
@@ -4603,6 +5329,10 @@
       const c = mystery ? { body: '148 163 184', wing: '100 116 139', 'wing-dark': '51 65 85', ink: '15 23 42', horn: '226 232 240' } : sp.colors;
       const bar = (v) => `<div class="flex gap-0.5">${Array.from({ length: 10 }, (_, i) => `<span class="h-2.5 flex-1 rounded-sm" style="background:${i < v ? `rgb(${c.horn})` : 'rgb(255 255 255 / 0.15)'}"></span>`).join('')}</div>`;
       const title = mystery ? 'Mystery Egg' : levelInfo(level, best).name;
+      // Custom name(s) beside the form name. A raised type may have several Queens; show the rarest one's name in the title
+      const cardNames = (cardView.names && cardView.names.length ? cardView.names : (nickOf(best) ? [nickOf(best)] : []));
+      const cardTitleHtml = (!mystery && nickOf(best) ? withNick(best, title) : escapeHtml(title))
+        + (!mystery && cardNames.length > 1 ? `<div class="text-[11px] font-semibold text-white/70">All raised: ${cardNames.map(escapeHtml).join(', ')}</div>` : '');
       const art = level === 0 ? `<svg viewBox="20 50 200 190" class="absolute inset-0 w-full h-full overflow-visible">${awakeArt(0, best)}</svg>`
         : `<svg viewBox="-25 -50 290 300" class="absolute inset-0 w-full h-full overflow-visible">${awakeArt(level, best)}</svg>`;
       // Form switcher: ◀ dots ▶
@@ -4613,7 +5343,7 @@
         <div class="on-color w-[min(88vw,22rem)] rounded-[1.75rem] p-2.5 shadow-2xl" style="background: linear-gradient(145deg, rgb(${c.body}), rgb(${c.wing}) 55%, ${mystery ? '#94a3b8' : r.color})">
           <div class="rounded-[1.35rem] p-3 flex flex-col gap-2" style="background: linear-gradient(180deg, rgb(${c['wing-dark']}), rgb(${c.ink}))">
             <div class="flex items-center justify-between gap-2">
-              <div class="font-display font-bold text-xl text-white leading-tight">${title}</div>
+              <div class="font-display font-bold text-xl text-white leading-tight">${cardTitleHtml}</div>
               <div class="shrink-0 text-sm font-bold text-white/90">${level === DRAGON_TOP_LEVEL ? '👑 ' : ''}Lv ${level + 1}</div>
             </div>
             <div class="relative rounded-xl overflow-hidden border-4 aspect-[4/3]" style="border-color: rgb(${c.horn} / 0.8)">
@@ -4638,17 +5368,53 @@
               return `<div class="rounded-xl bg-black/30 px-3 py-2"><div class="text-[11px] font-bold text-white/70 mb-1">🧬 Family tree · Gen ${genOf(best)}</div>
                 <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-1">${mini(ps[0])}<span class="text-lg text-white/70">×</span>${mini(ps[1])}</div></div>`;
             })() : ''}
+            ${queens.length ? `<div class="rounded-xl bg-black/30 px-3 py-2">
+              <div class="text-[11px] font-bold text-white/70 mb-1">👑 ${queens.length === 1 ? 'Your Queen' : `Your ${queens.length} Queens`} · tap ✏️ to name</div>
+              <div class="flex flex-col gap-1">${queens.map(q => cardView.editing === q.index
+                ? `<form data-queen-form="${q.index}" class="flex items-center gap-1.5" autocomplete="off">
+                    <input type="text" maxlength="24" value="${escapeHtml(nickOf(q.e))}" placeholder="Name this dragon" aria-label="Dragon name" class="min-w-0 flex-1 rounded-lg px-2 py-1 text-sm font-bold text-white bg-black/40 border border-white/30 focus:outline-none">
+                    <button type="submit" class="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-white bg-black/40 hover:bg-black/60" aria-label="Save name">✓ Save</button>
+                  </form>`
+                : `<div class="flex items-center gap-2 min-w-0">
+                    <span class="shrink-0" title="${rarityOf(q.e).name}">${rarityOf(q.e).icon}</span>
+                    <span class="min-w-0 flex-1 truncate text-sm ${nickOf(q.e) ? 'font-bold text-white' : 'italic text-white/60'}">${nickOf(q.e) ? escapeHtml(nickOf(q.e)) : 'No name yet'}</span>
+                    <span class="shrink-0 text-[10px] text-white/60">${escapeHtml(q.e.date || '')}</span>
+                    <button type="button" data-queen-edit="${q.index}" class="shrink-0 rounded-lg px-2 py-0.5 text-xs font-bold text-white bg-black/30 hover:bg-black/50" aria-label="${nickOf(q.e) ? `Rename ${escapeHtml(nickOf(q.e))}` : 'Name this dragon'}">✏️ ${nickOf(q.e) ? 'Rename' : 'Name'}</button>
+                  </div>`).join('')}</div>
+            </div>` : ''}
             <div class="text-[11px] italic text-white/75 px-1">“${mystery ? 'Something is wiggling inside…' : info.flavor}”</div>
             <div class="flex items-center justify-between text-[10px] font-semibold text-white/60 border-t border-white/15 pt-1.5">
-              <span>${raised ? `Raised by ${escapeHtml(galleryClass())} · ×${cardView.count}${cardView.first ? ` · since ${cardView.first}` : ''}` : `Being raised by ${escapeHtml(galleryClass())} · now Lv ${maxLevel + 1}`}</span>
+              <span>${raised ? `Raised by ${escapeHtml(profileName())} · ×${cardView.count}${cardView.first ? ` · since ${cardView.first}` : ''}` : `Being raised by ${escapeHtml(profileName())} · now Lv ${maxLevel + 1}`}</span>
               <span>${mystery ? '#??' : number}</span>
             </div>
           </div>
         </div>`;
       document.querySelectorAll('[data-card-level]').forEach(b => b.addEventListener('click', () => setCardLevel(Number(b.dataset.cardLevel))));
       document.querySelectorAll('[data-card-nav]').forEach(b => b.addEventListener('click', () => setCardLevel(cardView.level + Number(b.dataset.cardNav))));
+      // Naming a Queen that is already in the Gallery
+      document.querySelectorAll('[data-queen-edit]').forEach(b => b.addEventListener('click', () => { cardView.editing = Number(b.dataset.queenEdit); renderDragonCard(); }));
+      const form = document.querySelector('[data-queen-form]');
+      if (form) {
+        const input = form.querySelector('input');
+        const index = Number(form.dataset.queenForm);
+        const finish = (save) => {
+          if (cardView.editing !== index) return; // already closed (Enter is followed by a blur)
+          cardView.editing = -1;
+          if (save) renameGalleryDragon(index, cleanNick(input.value));
+          renderDragonCard();
+          if (!dom.galleryModal.classList.contains('hidden')) renderGallery();
+        };
+        form.addEventListener('submit', (e) => { e.preventDefault(); finish(true); });
+        input.addEventListener('keydown', (e) => {
+          e.stopPropagation(); // Space, R, F, arrows… are typing here, not hotkeys
+          if (e.key === 'Escape') finish(false);
+        });
+        input.addEventListener('blur', () => finish(true));
+        input.focus(); input.select();
+      }
     }
     function closeDragonCard() {
+      if (cardView) cardView.editing = -1;
       dom.cardModal.classList.add('hidden');
       dom.cardModal.classList.remove('flex');
     }
@@ -4672,7 +5438,7 @@
         const cls = galleryClass();
         const all = loadGallery();
         if (!all[cls] || all[cls].length === 0) return;
-        if (!confirm(`Remove all dragons from ${cls}'s gallery? This can't be undone.`)) return;
+        if (!confirm(`Remove all dragons from ${profileName()}'s gallery? This can't be undone.`)) return;
         delete all[cls];
         saveGallery(all);
         renderGallery();
@@ -4853,7 +5619,7 @@
     /* ==========================================================================
        THEMES (color data lives in THEMES at the top of the page)
        ========================================================================== */
-    let currentTheme = 'galaxy';
+    let currentTheme = 'dungeon';
     let currentAppearance = 'auto';
 
     function setAppearance(pref, save = true) {
@@ -4876,7 +5642,7 @@
     }
 
     function setTheme(key, save = true) {
-      if (!THEMES[key]) key = 'galaxy';
+      if (!THEMES[key]) key = 'dungeon';
       currentTheme = key;
       applyThemeColors(key, currentAppearance);
       dom.loudMascot.textContent = THEMES[key].mascots[0];
