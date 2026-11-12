@@ -762,6 +762,15 @@
       80% { transform: translate(calc(var(--quake) * -0.4), calc(var(--quake) * 0.3)); }
     }
     @media (prefers-reduced-motion: reduce) { .stage-quake { animation: none !important; } }
+    /* Too long hiding: the screen goes dark. Below the top bar (z-30) and modals (z-50+), never blocks clicks. */
+    #darkOverlay {
+      position: fixed; inset: 0; z-index: 25; pointer-events: none;
+      display: flex; align-items: center; justify-content: center; padding: 1rem; text-align: center;
+      background: rgb(0 0 0 / 0.9); color: #e2e8f0; font-size: 1.5rem; font-weight: 700;
+      opacity: 0; transition: opacity 2.5s ease;
+    }
+    #darkOverlay.is-dark { opacity: 1; }
+    @media (prefers-reduced-motion: reduce) { #darkOverlay { transition-duration: 0.01s; } }
     .stage-puff { position: absolute; width: 60px; height: 60px; border-radius: 9999px; background: rgb(148 163 184 / 0.55);
       animation: stage-puff 1s ease-out forwards; pointer-events: none; }
     @keyframes stage-puff { 0% { transform: scale(0.3); opacity: 0.9; } 100% { transform: scale(2.4) translateY(-20px); opacity: 0; } }
@@ -1315,6 +1324,8 @@
 </head>
 <body class="bg-violet-950 text-slate-100 font-sans min-h-screen flex flex-col justify-between overflow-x-hidden selection:bg-loud-500 selection:text-white">
 
+  <div id="darkOverlay" aria-hidden="true">It's gone dark… stay quiet to coax your dragon back.</div>
+
   <!-- Header / Top Bar -->
   <header id="topBar" class="w-full px-4 sm:px-8 py-3.5 border-b border-violet-800/60 bg-violet-900/80 backdrop-blur-md flex items-center justify-between z-30 sticky top-0">
     <div class="flex items-center gap-3">
@@ -1395,10 +1406,10 @@
       <div class="trough flex-1 h-3.5 bg-violet-950 rounded-full overflow-hidden p-0.5 border border-violet-700 relative">
         <div id="noiseMeterFill" class="h-full bg-gradient-to-r from-emerald-400 via-amber-400 to-loud-500 rounded-full transition-all duration-75" style="width: 0%;"></div>
         <!-- Noise threshold line marker -->
-        <div id="thresholdMarker" class="absolute top-0 bottom-0 w-1 bg-white shadow-lg pointer-events-none" style="left: 30%;"></div>
+        <div id="thresholdMarker" class="absolute top-0 bottom-0 w-1 bg-white shadow-lg pointer-events-none" style="left: 50%;"></div>
       </div>
       <div class="flex items-center gap-2">
-        <span class="text-[11px] text-slate-300 font-medium whitespace-nowrap" id="thresholdNotice">Trigger: 30%</span>
+        <span class="text-[11px] text-slate-300 font-medium whitespace-nowrap" id="thresholdNotice">Trigger: 50%</span>
         <button id="quickCalibrateBtn" class="text-[10px] px-2 py-0.5 rounded bg-violet-800 hover:bg-violet-700 text-cyan-300 font-semibold border border-violet-700">Tune</button>
       </div>
     </div>
@@ -1724,7 +1735,7 @@
         </div>
         <div class="trough h-4 bg-violet-900 rounded-full overflow-hidden p-0.5 border border-violet-700 relative">
           <div id="modalNoiseBar" class="h-full bg-gradient-to-r from-emerald-400 via-amber-400 to-loud-500 rounded-full transition-all duration-75" style="width: 0%;"></div>
-          <div id="modalThresholdLine" class="absolute top-0 bottom-0 w-1 bg-white shadow pointer-events-none" style="left: 30%;"></div>
+          <div id="modalThresholdLine" class="absolute top-0 bottom-0 w-1 bg-white shadow pointer-events-none" style="left: 50%;"></div>
         </div>
         <div class="mt-2.5 flex items-center justify-between text-[11px] text-slate-400">
           <span>Mic Gain Boost:</span>
@@ -1772,14 +1783,14 @@
         <div class="flex items-center justify-between text-xs">
           <label for="thresholdSlider" class="font-bold text-white flex items-center gap-1.5">
             <span>Threshold Trigger Level:</span>
-            <span id="sliderValueText" class="text-cyan-400 font-mono font-bold text-sm">30%</span>
+            <span id="sliderValueText" class="text-cyan-400 font-mono font-bold text-sm">50%</span>
           </label>
           <span class="text-[11px] text-slate-400">Sound above this triggers Loud Time</span>
         </div>
-        <input type="range" id="thresholdSlider" min="5" max="85" value="30" class="w-full accent-pink-500 cursor-pointer h-2 bg-violet-900 rounded-lg">
+        <input type="range" id="thresholdSlider" min="5" max="85" value="50" class="w-full accent-pink-500 cursor-pointer h-2 bg-violet-900 rounded-lg">
         <div class="flex justify-between text-[10px] text-slate-500 font-medium">
           <span>5% (Pin Drop)</span>
-          <span>30% (Standard)</span>
+          <span>50% (Standard)</span>
           <span>60% (Loud Voices)</span>
           <span>85% (Shouting)</span>
         </div>
@@ -2657,6 +2668,7 @@
       dragonHearts: 3,   // can be fractional while draining/refilling
       dragonHiding: false,
       dragonCoaxMs: 0,   // quiet time so far while hiding
+      dragonHiddenMs: 0, // session time (Loud or Quiet) the dragon has been hiding; too long and the screen goes dark
       dragonLevel: 0,
       dragonBest: 0,
       dragonFamily: 0,    // grown dragons that reached the final form and laid an egg
@@ -2693,18 +2705,22 @@
     const quietLevelMs = () => dragonSettings.quietMin * 60000;
     const heartMs = () => dragonSettings.heartSec * 1000;
     const hideMs = () => dragonSettings.hideSec * 1000;
+    const darkAfterMs = () => hideMs() * 2; // hidden this long and the screen goes dark
+    const isDarkened = () => state.dragonHiding && (state.dragonHiddenMs || 0) >= darkAfterMs();
 
     // One step of the dragon rules, shared by the live timer and the recalculation.
     // d = the dragon state (progress, hearts, hiding, coax time, grace). Returns 'hide',
     // 'return' or null. Growth and egg laying are handled by the caller.
     function stepDragon(d, side, delta) {
       let event = null;
+      if (d.dragonHiding) d.dragonHiddenMs = (d.dragonHiddenMs || 0) + delta;
       if (side === 'quiet') {
         if (d.dragonHiding) {
           d.dragonCoaxMs += delta;
           if (d.dragonCoaxMs >= hideMs()) {
             d.dragonHiding = false;
             d.dragonCoaxMs = 0;
+            d.dragonHiddenMs = 0;
             d.dragonHearts = dragonSettings.hearts;
             event = 'return';
           }
@@ -2721,6 +2737,7 @@
             d.dragonHearts = 0;
             d.dragonHiding = true;
             d.dragonCoaxMs = 0;
+            d.dragonHiddenMs = 0;
             event = 'hide';
           }
         }
@@ -2944,7 +2961,7 @@
     };
 
     // Kept outside the mic meter so slider/boost changes made before the mic starts aren't lost
-    const micSettings = { threshold: 30, gainBoost: 2.5 };
+    const micSettings = { threshold: 50, gainBoost: 2.5 };
 
     const sound = new ClassroomSoundEngine();
     let micMeter = null;
@@ -2969,6 +2986,7 @@
       dragonRarity: document.getElementById('dragonRarity'),
       dragonFamily: document.getElementById('dragonFamily'),
       dragonHearts: document.getElementById('dragonHearts'),
+      darkOverlay: document.getElementById('darkOverlay'),
       galleryModal: document.getElementById('galleryModal'),
       leaderboardModal: document.getElementById('leaderboardModal'),
       cardModal: document.getElementById('cardModal'),
@@ -3753,7 +3771,17 @@
       dom.dragonHearts.innerHTML = Array.from({ length: max }, (_, i) => heart(Math.max(0, Math.min(1, h - i)), i)).join('');
     }
 
+    // The screen goes dark when the dragon has hidden too long; only touch the DOM when it changes
+    let lastDark = false;
+    function updateDarkness() {
+      const dark = isDarkened();
+      if (dark === lastDark) return;
+      lastDark = dark;
+      dom.darkOverlay.classList.toggle('is-dark', dark);
+    }
+
     function updateDragonBar() {
+      updateDarkness();
       const p = state.dragonProgress;
       const level = state.dragonLevel;
       const isLoud = state.activeTimer === 'loud';
@@ -4797,7 +4825,7 @@
       startTimerLoop();
       updateDisplay();
       applyVisualState();
-      setNoiseThreshold(30);
+      setNoiseThreshold(50);
       loadLogs();
       renderLogsTable();
       renderMilestones();
@@ -4980,7 +5008,7 @@
       return (p && p.name) || 'My class';
     };
     const CLASSES_KEY = 'quietloud-classes';
-    const DRAGON_FIELDS = ['dragonProgress', 'dragonLevel', 'dragonBest', 'dragonFamily', 'dragonLineage', 'speciesBag', 'dragonHearts', 'dragonHiding', 'dragonCoaxMs'];
+    const DRAGON_FIELDS = ['dragonProgress', 'dragonLevel', 'dragonBest', 'dragonFamily', 'dragonLineage', 'speciesBag', 'dragonHearts', 'dragonHiding', 'dragonCoaxMs', 'dragonHiddenMs'];
     let lastClassSave = 0;
 
     function loadClasses() {
@@ -4992,7 +5020,7 @@
     function saveClasses(all) {
       try { localStorage.setItem(CLASSES_KEY, JSON.stringify(all)); } catch (e) {}
     }
-    const freshDragon = () => ({ dragonProgress: 0, dragonLevel: 0, dragonBest: 0, dragonFamily: 0, dragonLineage: [], speciesBag: [], dragonHearts: dragonSettings.hearts, dragonHiding: false, dragonCoaxMs: 0 });
+    const freshDragon = () => ({ dragonProgress: 0, dragonLevel: 0, dragonBest: 0, dragonFamily: 0, dragonLineage: [], speciesBag: [], dragonHearts: dragonSettings.hearts, dragonHiding: false, dragonCoaxMs: 0, dragonHiddenMs: 0 });
     function snapshotDragon() {
       const snap = {};
       DRAGON_FIELDS.forEach(k => { snap[k] = state[k]; });
@@ -5696,7 +5724,7 @@
     function recalculateDragon() {
       const graceMs = dragonSettings.graceSec * 1000;
       const base = state.dragonBaseline || snapshotDragon();
-      const d = { dragonProgress: base.dragonProgress, dragonHearts: Math.min(base.dragonHearts, dragonSettings.hearts), dragonHiding: base.dragonHiding, dragonCoaxMs: base.dragonCoaxMs, dragonGraceMs: 0 };
+      const d = { dragonProgress: base.dragonProgress, dragonHearts: Math.min(base.dragonHearts, dragonSettings.hearts), dragonHiding: base.dragonHiding, dragonCoaxMs: base.dragonCoaxMs, dragonHiddenMs: base.dragonHiddenMs || 0, dragonGraceMs: 0 };
       if (state.dragonHistory.length === 0) {
         state.dragonHearts = Math.min(state.dragonHearts, dragonSettings.hearts);
         if (!state.dragonHiding) state.dragonHearts = dragonSettings.hearts;
