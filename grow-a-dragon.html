@@ -1619,7 +1619,7 @@
           <div class="trough h-5 rounded-full bg-violet-950/80 border-2 border-violet-700 overflow-hidden p-0.5">
             <div id="dragonXpFill" class="h-full rounded-full bg-gradient-to-r from-quiet-500 to-quiet-300" style="width: 0%;"></div>
           </div>
-          <p id="dragonHint" class="text-xs sm:text-sm text-slate-300 mt-2 text-center font-semibold">Every 5 quiet minutes grows your dragon. Too much noise and it runs off to hide!</p>
+          <p id="dragonHint" class="text-xs sm:text-sm text-slate-300 mt-2 text-center font-semibold">Every 3 quiet minutes grows your dragon. Too much noise and it runs off to hide!</p>
         </div>
       </section>
 
@@ -1771,7 +1771,7 @@
     <div class="stone-panel mt-6 bg-violet-900/70 border border-violet-800 rounded-3xl p-5 sm:p-6 shadow-2xl">
       <div class="flex items-center justify-between mb-3">
         <h3 class="font-display font-bold text-base text-slate-100">🐉 Dragon Journey This Session</h3>
-        <span id="dragonRulesShort" class="hidden sm:inline text-xs text-slate-400">Grows every 5 quiet min · shrinks after 1 loud min</span>
+        <span id="dragonRulesShort" class="hidden sm:inline text-xs text-slate-400">Grows every 3 quiet min · 3 hearts · hides when they run out</span>
       </div>
       <ul id="milestoneList" class="flex flex-col gap-2 max-h-56 overflow-y-auto text-sm"></ul>
     </div>
@@ -2407,7 +2407,7 @@
         });
       }
 
-      // Sparkly little fanfare for every 5 minutes of Quiet Time
+      // Sparkly little fanfare when the dragon grows back or comes out of hiding
       playQuietMilestone() {
         if (!this.enabled) return;
         this.initContext();
@@ -2801,7 +2801,7 @@
     // Dragon levels: grows one level per X quiet minutes. Loud Time never takes levels away:
     // it drains hearts, and with no hearts left the dragon hides (no growth) until the
     // class stays quiet long enough to coax it out. All of this is set in Settings.
-    const DRAGON_DEFAULTS = { quietMin: 5, hearts: 3, heartSec: 20, hideSec: 30, graceSec: 10 };
+    const DRAGON_DEFAULTS = { quietMin: 3, hearts: 3, heartSec: 20, hideSec: 30, graceSec: 10 };
     const DRAGON_OPTIONS = {
       quietMin: [1, 2, 3, 5, 10, 15],
       hearts: [1, 2, 3, 4, 5],

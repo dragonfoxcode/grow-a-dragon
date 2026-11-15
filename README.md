@@ -3,7 +3,7 @@ to create a tool that works like a chess timer but for loud and quiet moments in
 the classroom. Originally the program needed to be manually controlled to switch
 between the two clocks. Now there is an adjustable sound-activated mode. There 
 are also levels that started as stars but evolved into a little baby dragon egg
-that hatches and grows with every 5 minute increment of quiet time. Maybe this
+that hatches and grows with every 3 minute increment of quiet time. Maybe this
 will be helpful for you!
 
 Grow a Dragon is built on the [Classroom Timer Template](https://github.com/dragonfoxcode/classroom-timer-template).
