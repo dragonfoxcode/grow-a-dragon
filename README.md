@@ -18,4 +18,4 @@ Enjoy,
 
 ---
 
-Grow a Dragon © 2026 Dowager Records LLC. All rights reserved. See [LICENSE](LICENSE) for details.
+Grow a Dragon © 2026 DragonFox. All rights reserved. See [LICENSE](LICENSE) for details.
