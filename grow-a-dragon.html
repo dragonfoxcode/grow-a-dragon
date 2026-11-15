@@ -10,6 +10,7 @@
       app: 'quietloud',
       icon: '🐉',
       chipBefore: 'micToggleBtn',
+      game: 'grow-a-dragon', // written into players files (Move players), so a file only loads into this game
       freshText: 'a new egg, an empty Dragon Gallery and an empty Classes Log',
       deleteText: 'dragon, Dragon Gallery, settings and Classes Log',
       // Saves from before profiles existed
@@ -301,6 +302,218 @@
         return 'Played ' + new Date(t).toLocaleDateString();
       }
 
+      /* ---------- Move players to another computer ----------
+         Saves are kept in this browser only. "Move players" writes the chosen
+         players (their registry entry plus every key filed under them) to one
+         file, and reads such a file back in on another computer or browser. */
+      const GAME_ID = CFG.game || CFG.app;                 // a file only loads into the game it came from
+      const gameTitle = () => document.title.split(' · ')[0];
+      const FILE_FORMAT = 'classroom-timer-players';
+      const MAX_FILE_BYTES = 8 * 1024 * 1024;
+      let moving = null;  // on the Move players screen: { picked: Set of ids to save, incoming: players read from a file, note }
+      let notice = '';    // one line shown above the player list after a load
+
+      const twinOf = (name) => reg.list.find(p => p.name.toLowerCase() === name.toLowerCase());
+      function freeName(name, others) {
+        const taken = (n) => others.some(p => p.name.toLowerCase() === n.toLowerCase());
+        if (!taken(name)) return name;
+        for (let i = 2; ; i++) {
+          const suffix = ` (${i})`;
+          const n = name.slice(0, 40 - suffix.length).trimEnd() + suffix;
+          if (!taken(n)) return n;
+        }
+      }
+      function playerData(id) {
+        const ns = nsOf(id), data = {};
+        allRawKeys().forEach(k => { if (k && k.startsWith(ns)) data[k.slice(ns.length)] = rawGet(k); });
+        return data;
+      }
+
+      function savePlayersFile() {
+        try { window.dispatchEvent(new Event('pagehide')); } catch (e) {} // the game writes its latest state first
+        const players = reg.list.filter(p => moving.picked.has(p.id)).map(p => (
+          { name: p.name, avatar: p.avatar, created: p.created, lastPlayed: p.lastPlayed, v: p.v, data: playerData(p.id) }));
+        if (!players.length) return;
+        const file = { format: FILE_FORMAT, version: 1, game: GAME_ID, title: gameTitle(), saved: new Date().toISOString(), players };
+        const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        const d = new Date();
+        const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const who = players.length === 1 ? (slug(players[0].name) || 'player') : 'players';
+        const url = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${slug(gameTitle()) || GAME_ID}-${who}-${day}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        moving.note = `Saved ${players.length === 1 ? players[0].name : players.length + ' players'} to "${a.download}" (look in Downloads). Take that file to the other computer and load it there.`;
+        moving.noteOk = true;
+        renderPicker();
+      }
+
+      // Only the fields we know, and only text values, are taken from a file
+      function cleanPlayer(p) {
+        if (!p || typeof p.name !== 'string' || !p.data || typeof p.data !== 'object' || Array.isArray(p.data)) return null;
+        const name = p.name.trim().slice(0, 40);
+        if (!name) return null;
+        const data = {};
+        Object.keys(p.data).forEach(k => { if (typeof p.data[k] === 'string' && k !== '__proto__') data[k] = p.data[k]; });
+        const time = (t) => (Number.isFinite(t) && t > 0 ? t : 0);
+        const out = { name, data, replace: false, created: time(p.created) || Date.now(), lastPlayed: time(p.lastPlayed),
+          avatar: typeof p.avatar === 'string' && p.avatar && p.avatar.length <= 16 ? p.avatar : AVATARS[0] };
+        if (Number.isInteger(p.v)) out.v = p.v;
+        return out;
+      }
+      async function readPlayersFile(file) {
+        let incoming = null, note = "Sorry, that doesn't look like a players file saved from this game.";
+        try {
+          if (file.size > MAX_FILE_BYTES) throw new Error('too big');
+          const f = JSON.parse(await file.text());
+          if (!f || f.format !== FILE_FORMAT || !Array.isArray(f.players)) throw new Error('not a players file');
+          if (f.game !== GAME_ID) note = `That file is from ${typeof f.title === 'string' && f.title ? f.title.slice(0, 60) : 'another game'}. It only loads into that game, not ${gameTitle()}.`;
+          else {
+            incoming = f.players.slice(0, 500).map(cleanPlayer).filter(Boolean);
+            if (!incoming.length) incoming = null;
+          }
+        } catch (e) {}
+        if (!moving) return;
+        moving.incoming = incoming;
+        moving.note = incoming ? '' : note;
+        moving.noteOk = false;
+        renderPicker();
+      }
+
+      function loadIncoming() {
+        const written = [], added = [], removed = [];
+        let list = reg.list.slice();
+        try {
+          moving.incoming.forEach(inc => {
+            const old = twinOf(inc.name);
+            const swap = !!(old && inc.replace && !removed.includes(old.id));
+            if (swap) { removed.push(old.id); list = list.filter(p => p.id !== old.id); }
+            let id = newId();
+            while (list.some(p => p.id === id)) id = newId();
+            const p = { id, name: swap ? old.name : freeName(inc.name, list), avatar: inc.avatar, created: inc.created, lastPlayed: inc.lastPlayed };
+            if (inc.v !== undefined) p.v = inc.v;
+            if (swap) p.took = old.id;
+            Object.keys(inc.data).forEach(k => { written.push(nsOf(id) + k); raw.set.call(LS, nsOf(id) + k, inc.data[k]); });
+            list.push(p);
+            added.push(p);
+          });
+          let current = reg.current;
+          added.forEach(p => { if (p.took === current) current = p.id; delete p.took; });
+          raw.set.call(LS, REG_KEY, JSON.stringify({ ...reg, list, current }));
+          reg.list = list;
+          reg.current = current;
+        } catch (e) {
+          // Most likely the browser's storage is full: take back what was written, leave everything as it was
+          written.forEach(rawRemove);
+          moving.note = "There wasn't enough room in this browser to load that file, so nothing was changed.";
+          moving.noteOk = false;
+          renderPicker();
+          return;
+        }
+        removed.forEach(id => removeNamespace(nsOf(id)));
+        if (loaded && removed.includes(loaded.id)) {
+          // This page is still playing as the replaced player: stop saving under their name, then start over
+          NS = nsOf(GUEST);
+          try { sessionStorage.removeItem(CHOSEN_KEY); } catch (e) {}
+          location.reload();
+          return;
+        }
+        notice = added.length === 1 ? `${added[0].name} is here now.` : `${added.length} players are here now.`;
+        moving = null;
+        editing = null;
+        renderPicker();
+      }
+
+      function renderMove() {
+        const btn = 'rounded-xl border font-bold transition';
+        const box = 'ui-well mt-5 bg-violet-900 border border-violet-700 rounded-2xl p-5 space-y-3';
+        const head = 'text-xs uppercase font-bold tracking-wider text-pink-300';
+        const row = 'flex items-center gap-3 rounded-xl bg-violet-950 border border-violet-700 px-3 py-2';
+        const summaryOf = (read) => { try { return CFG.summary(read) || ''; } catch (e) { return ''; } };
+        const n = moving.picked.size;
+        const saveBox = !reg.list.length ? '' : `
+          <div class="${box}">
+            <h3 class="${head}">Save players from this computer</h3>
+            <div class="space-y-2">
+              ${reg.list.slice().sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0)).map(p => `
+              <label class="${row} cursor-pointer">
+                <input type="checkbox" data-save="${p.id}" ${moving.picked.has(p.id) ? 'checked' : ''} class="w-5 h-5 shrink-0 accent-pink-500">
+                <span class="text-2xl leading-none" aria-hidden="true">${esc(p.avatar)}</span>
+                <span class="min-w-0">
+                  <span class="block font-bold text-white [overflow-wrap:anywhere]">${esc(p.name)}</span>
+                  <span class="block text-xs text-slate-400">${esc([summaryOf(readFor(p.id)), ago(p.lastPlayed)].filter(Boolean).join(' · '))}</span>
+                </span>
+              </label>`).join('')}
+            </div>
+            <p class="text-sm text-slate-400">This makes one file. Send it to the other computer any way you like (email, a shared drive, a USB stick). The players stay on this computer too.</p>
+            <div class="flex justify-end">
+              <button type="button" data-act="save-file" ${n ? '' : 'disabled'} class="${btn} px-5 py-2.5 bg-pink-500 border-pink-400 text-white hover:bg-pink-400 on-color disabled:opacity-50">${n === 1 ? 'Save 1 player to a file' : `Save ${n} players to a file`}</button>
+            </div>
+          </div>`;
+        const inc = moving.incoming;
+        const incomingList = !inc ? '' : `
+            <div class="space-y-2">
+              ${inc.map((p, i) => {
+                const old = twinOf(p.name);
+                const s = [summaryOf((k) => (Object.prototype.hasOwnProperty.call(p.data, k) ? p.data[k] : null)), ago(p.lastPlayed)].filter(Boolean).join(' · ');
+                return `
+              <div class="${row} flex-wrap">
+                <span class="text-2xl leading-none" aria-hidden="true">${esc(p.avatar)}</span>
+                <span class="min-w-0 flex-1">
+                  <span class="block font-bold text-white [overflow-wrap:anywhere]">${esc(p.name)}</span>
+                  <span class="block text-xs text-slate-400">${esc(s)}</span>
+                </span>
+                ${old ? `<label class="w-full text-xs text-slate-400">${esc(old.name)} is already on this computer (${esc([summaryOf(readFor(old.id)), ago(old.lastPlayed)].filter(Boolean).join(' · ') || 'no progress yet')}).
+                  <select data-clash="${i}" class="mt-1 w-full bg-violet-900 border border-violet-700 rounded-lg px-2 py-1.5 text-sm text-white font-semibold">
+                    <option value="both" ${p.replace ? '' : 'selected'}>Keep both</option>
+                    <option value="replace" ${p.replace ? 'selected' : ''}>Replace the one on this computer</option>
+                  </select></label>` : ''}
+              </div>`; }).join('')}
+            </div>
+            <div class="flex gap-3 justify-end">
+              <button type="button" data-act="choose-file" class="${btn} px-4 py-2.5 bg-violet-800 border-violet-700 text-slate-200 hover:bg-violet-750">Choose another file</button>
+              <button type="button" data-act="load-file" class="${btn} px-5 py-2.5 bg-pink-500 border-pink-400 text-white hover:bg-pink-400 on-color">${inc.length === 1 ? 'Load this player' : `Load these ${inc.length} players`}</button>
+            </div>`;
+        return `
+          <h2 class="text-2xl sm:text-3xl font-display font-bold text-white text-center">Move players</h2>
+          <p class="mt-1 text-sm text-slate-400 text-center">Players are saved in this browser, on this computer. To play somewhere else, save them to a file here and load that file there.</p>
+          ${moving.note ? `<p role="status" class="mt-4 rounded-xl border px-4 py-3 text-sm font-semibold ${moving.noteOk ? 'bg-quiet-500/15 border-quiet-400 text-quiet-200' : 'bg-loud-500/15 border-loud-400 text-loud-300'}">${esc(moving.note)}</p>` : ''}
+          ${saveBox}
+          <div class="${box}">
+            <h3 class="${head}">Load players onto this computer</h3>
+            <input type="file" data-file accept=".json,application/json" hidden>
+            ${inc ? incomingList : `
+            <p class="text-sm text-slate-400">Choose a players file that was saved from ${esc(gameTitle())} on another computer. Nothing changes until you have seen who is in it.</p>
+            <div class="flex justify-end">
+              <button type="button" data-act="choose-file" class="${btn} px-5 py-2.5 bg-pink-500 border-pink-400 text-white hover:bg-pink-400 on-color">Choose a players file</button>
+            </div>`}
+          </div>
+          <div class="mt-5 flex justify-end">
+            <button type="button" data-act="cancel" class="${btn} px-4 py-2.5 bg-violet-800 border-violet-700 text-slate-200 hover:bg-violet-750">Back</button>
+          </div>`;
+      }
+
+      function onPickerChange(e) {
+        const t = e.target;
+        if (!moving || !t || !t.dataset) return;
+        if (t.dataset.save) {
+          if (t.checked) moving.picked.add(t.dataset.save); else moving.picked.delete(t.dataset.save);
+          const b = overlay.querySelector('[data-act="save-file"]');
+          const n = moving.picked.size;
+          if (b) { b.disabled = !n; b.textContent = n === 1 ? 'Save 1 player to a file' : `Save ${n} players to a file`; }
+        } else if (t.dataset.clash !== undefined && moving.incoming && moving.incoming[+t.dataset.clash]) {
+          moving.incoming[+t.dataset.clash].replace = t.value === 'replace';
+        } else if (t.type === 'file') {
+          const file = t.files && t.files[0];
+          t.value = '';
+          if (file) readPlayersFile(file);
+        }
+      }
+
       /* ---------- The "Who's playing?" screen ---------- */
       let overlay = null;
       let editing = null; // null = list; {id?} = new / rename form
@@ -319,20 +532,23 @@
         // Keep the game's hotkeys (Space, R, F…) from firing while this is open
         overlay.addEventListener('keydown', (e) => {
           e.stopPropagation();
-          if (e.key === 'Escape' && editing) { editing = null; renderPicker(); }
+          if (e.key === 'Escape' && moving) { moving = null; editing = reg.list.length ? null : {}; renderPicker(); }
+          else if (e.key === 'Escape' && editing && reg.list.length) { editing = null; renderPicker(); }
         });
         window.addEventListener('keydown', (e) => {
           if (isOpen() && !(e.target instanceof Node && overlay.contains(e.target))) { e.stopImmediatePropagation(); e.preventDefault(); overlay.focus(); }
         }, true);
         overlay.addEventListener('click', onPickerClick);
         overlay.addEventListener('submit', onPickerSubmit);
+        overlay.addEventListener('change', onPickerChange);
       }
       const isOpen = () => overlay && !overlay.classList.contains('hidden');
 
       function renderPicker() {
         const btn = 'rounded-xl border font-bold transition';
         let body;
-        if (editing) {
+        if (moving) body = renderMove();
+        else if (editing) {
           const p = editing.id ? reg.list.find(x => x.id === editing.id) : null;
           body = `
             <h2 class="text-2xl sm:text-3xl font-display font-bold text-white text-center">${p ? 'Edit player' : 'New player'}</h2>
@@ -354,7 +570,8 @@
                 ${reg.list.length ? `<button type="button" data-act="cancel" class="${btn} px-4 py-2.5 bg-violet-800 border-violet-700 text-slate-200 hover:bg-violet-750">Back</button>` : ''}
                 <button type="submit" class="${btn} px-5 py-2.5 bg-pink-500 border-pink-400 text-white hover:bg-pink-400 on-color">${p ? 'Save' : 'Create & play'}</button>
               </div>
-            </form>`;
+            </form>
+            ${reg.list.length ? '' : `<p class="mt-5 text-center text-sm text-slate-400">Already playing on another computer? <button type="button" data-act="move" class="font-bold text-pink-300 underline underline-offset-4 hover:text-pink-400">Bring your players over</button></p>`}`;
         } else {
           const cards = reg.list.slice().sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0)).map(p => {
             let summary = '';
@@ -381,14 +598,19 @@
               <h2 class="mt-2 text-2xl sm:text-3xl font-display font-bold text-white">Who's playing?</h2>
               <p class="mt-1 text-sm text-slate-400">Pick a player to carry on where they left off.</p>
             </div>
+            ${notice ? `<p role="status" class="mt-4 rounded-xl border px-4 py-3 text-sm font-semibold text-center bg-quiet-500/15 border-quiet-400 text-quiet-200">${esc(notice)}</p>` : ''}
             <div class="mt-6 grid gap-3 sm:grid-cols-2">
               ${cards}
               <button type="button" data-act="new" class="flex items-center justify-center gap-3 p-4 min-h-[5.5rem] rounded-2xl border-2 border-dashed border-violet-600 text-pink-300 font-display font-bold text-lg hover:border-pink-400 hover:bg-violet-900 transition">
                 <span class="text-3xl leading-none" aria-hidden="true">＋</span> New player
               </button>
+            </div>
+            <div class="mt-5 text-center">
+              <button type="button" data-act="move" class="${btn} px-4 py-2 text-sm bg-violet-800 border-violet-700 text-slate-200 hover:bg-violet-750">💾 Move players to another computer</button>
             </div>`;
         }
         overlay.innerHTML = `<div class="w-full max-w-2xl my-8">${body}</div>`;
+        notice = '';
         const input = overlay.querySelector('input[name="profileName"]');
         if (input) { input.focus(); input.select(); } else overlay.focus();
       }
@@ -399,7 +621,11 @@
         if (t.dataset.pick) switchTo(t.dataset.pick);
         else if (t.dataset.avatar) { pickedAvatar = t.dataset.avatar; const n = overlay.querySelector('input[name="profileName"]'); const v = n ? n.value : ''; renderPicker(); const n2 = overlay.querySelector('input[name="profileName"]'); if (n2) n2.value = v; }
         else if (t.dataset.act === 'new') { editing = {}; pickedAvatar = AVATARS[reg.list.length % AVATARS.length]; renderPicker(); }
-        else if (t.dataset.act === 'cancel') { editing = null; renderPicker(); }
+        else if (t.dataset.act === 'cancel') { moving = null; editing = reg.list.length ? null : {}; renderPicker(); }
+        else if (t.dataset.act === 'move') { moving = { picked: new Set(reg.list.map(p => p.id)), incoming: null, note: '' }; renderPicker(); }
+        else if (t.dataset.act === 'save-file') savePlayersFile();
+        else if (t.dataset.act === 'choose-file') overlay.querySelector('input[data-file]').click();
+        else if (t.dataset.act === 'load-file') loadIncoming();
         else if (t.dataset.edit) { const p = reg.list.find(x => x.id === t.dataset.edit); editing = { id: p.id }; pickedAvatar = p.avatar; renderPicker(); }
         else if (t.dataset.del) deleteProfile(t.dataset.del);
       }
@@ -445,6 +671,7 @@
 
       function openPicker() {
         editing = reg.list.length ? null : {};
+        moving = null;
         renderPicker();
         overlay.classList.remove('hidden');
         overlay.classList.add('flex');

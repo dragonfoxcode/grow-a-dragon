@@ -6,6 +6,10 @@ are also levels that started as stars but evolved into a little baby dragon egg
 that hatches and grows with every 3 minute increment of quiet time. Maybe this
 will be helpful for you!
 
+Progress is saved in the browser you play in. To carry on at another computer,
+press "Move players to another computer" on the "Who's playing?" screen, save
+the players to a file, and load that file in the game on the other computer.
+
 Grow a Dragon is built on the [Classroom Timer Template](https://github.com/dragonfoxcode/classroom-timer-template).
 
 Enjoy,
