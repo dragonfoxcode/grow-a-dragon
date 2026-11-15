@@ -83,6 +83,91 @@
         saveRegistry();
       }
 
+      /* ---------- Players arriving from the old web address ----------
+         This game used to live at dowagercode.github.io. A browser keeps each web
+         address's saves apart, so the old address now sends visitors here with
+         their saved players packed into the link (#handoff=...). Each handoff is
+         taken once, and it only ever adds players: nothing here is replaced. */
+      (function takeHandoff() {
+        const m = /^#handoff=(.*)$/.exec(location.hash || '');
+        if (!m) return;
+        try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+        if (!/^[A-Za-z0-9_-]+$/.test(m[1])) return;
+        const SEEN_KEY = CFG.app + '+handoffs'; // ids of the handoffs already taken
+        const before = JSON.stringify(reg);
+        const written = [];
+        try {
+          const bin = atob(m[1].replace(/-/g, '+').replace(/_/g, '/'));
+          const h = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))));
+          if (!h || h.app !== CFG.app || typeof h.id !== 'string' || !h.id || h.id.length > 64) return;
+          if (!h.keys || typeof h.keys !== 'object' || Array.isArray(h.keys)) return;
+          let seen = [];
+          try { const s = JSON.parse(rawGet(SEEN_KEY) || '[]'); if (Array.isArray(s)) seen = s; } catch (e) {}
+          if (seen.includes(h.id)) return;
+
+          const keys = Object.keys(h.keys).filter(k => typeof h.keys[k] === 'string');
+          let old = null;
+          try { old = JSON.parse(h.keys[REG_KEY] || 'null'); } catch (e) {}
+          if (!old || !Array.isArray(old.list) || !old.list.length) old = null;
+          let incoming = [];
+          if (old) {
+            incoming = old.list.slice(0, 500)
+              .filter(p => p && typeof p.id === 'string' && p.id && p.id !== GUEST && typeof p.name === 'string' && p.name.trim())
+              .map(p => ({ p, from: nsOf(p.id) }));
+          } else if (keys.some(CFG.isLegacyKey)) {
+            // A save from before players existed: it arrives as "Player 1", as it would have at the old address
+            incoming = [{ p: { id: '', name: 'Player 1', created: Date.now(), lastPlayed: Date.now() }, from: '', legacy: true }];
+          }
+          if (!incoming.length) return;
+
+          // Sent by the old address: take it. A link from anywhere else has to be agreed to first.
+          const fromOld = /^https:\/\/dowagercode\.github\.io(\/|$)/.test(document.referrer || '');
+          if (!fromOld) {
+            const names = incoming.slice(0, 8).map(x => x.p.name.trim().slice(0, 40)).join(', ') + (incoming.length > 8 ? '…' : '');
+            if (!window.confirm(`This link brings saved players from the old web address into this game:\n\n${names}\n\nAdd them here?`)) return;
+          }
+
+          const time = (t) => (Number.isFinite(t) && t > 0 ? t : 0);
+          const taken = (n) => reg.list.some(q => q.name.toLowerCase() === n.toLowerCase());
+          const wasEmpty = !reg.list.length;
+          // Saves from an older version need the one-time migrations below to run again. Only when that
+          // cannot touch the players already here: there are none, or each is marked as migrated.
+          const rerun = (!old || old.v !== 2) && reg.list.every(q => q.v === 2);
+          let current = '';
+          incoming.forEach(({ p, from, legacy }) => {
+            let id = newId();
+            while (reg.list.some(q => q.id === id)) id = newId();
+            const base = p.name.trim().slice(0, 40);
+            let name = base;
+            for (let i = 2; taken(name); i++) {
+              const suffix = ` (${i})`;
+              name = base.slice(0, 40 - suffix.length).trimEnd() + suffix;
+            }
+            const entry = { id, name,
+              avatar: typeof p.avatar === 'string' && p.avatar && p.avatar.length <= 16 ? p.avatar : AVATARS[reg.list.length % AVATARS.length],
+              created: time(p.created) || Date.now(), lastPlayed: time(p.lastPlayed) };
+            if (p.v === 2) entry.v = 2;
+            keys.forEach(k => {
+              if (legacy ? !CFG.isLegacyKey(k) : !k.startsWith(from)) return;
+              const to = nsOf(id) + (legacy ? k : k.slice(from.length));
+              written.push(to);
+              raw.set.call(LS, to, h.keys[k]); // throws if storage is full
+            });
+            reg.list.push(entry);
+            if (old && p.id === old.current) current = id;
+          });
+          if (wasEmpty) reg.current = current || reg.list[0].id;
+          if (rerun) delete reg.v;
+          raw.set.call(LS, REG_KEY, JSON.stringify(reg));
+          raw.set.call(LS, SEEN_KEY, JSON.stringify(seen.concat(h.id).slice(-20)));
+        } catch (e) {
+          // Unreadable link or no room left: take back what was written and carry on as before
+          written.forEach(rawRemove);
+          try { reg = JSON.parse(before); } catch (e2) {}
+          if (written.length) rawSet(REG_KEY, before);
+        }
+      })();
+
       /* ---------- One-time migration (registry v2) ----------
          Before v2 a player could hold several named classes (their own dragon, gallery,
          log entries). Now one profile = one dragon. The "home" class (last used) stays in
