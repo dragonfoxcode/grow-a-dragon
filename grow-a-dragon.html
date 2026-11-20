@@ -281,7 +281,17 @@
       function markChosen(id) {
         try { sessionStorage.setItem(CHOSEN_KEY, id); } catch (e) {}
       }
-      function switchTo(id) {
+      // The DragonFox intro plays when the game opens and after a new player is named. Loading an
+      // existing player plays it only if it last played a few minutes ago or more. The other
+      // reloads (the player button, deleting a player, loading a file) never play it.
+      const INTRO_AGAIN_MS = 3 * 60 * 1000;
+      function skipIntro() {
+        try { sessionStorage.setItem('dragonfox-skip-intro', '1'); } catch (e) {}
+      }
+      function introIsRecent() {
+        try { return Date.now() - Number(sessionStorage.getItem('dragonfox-intro-at') || 0) < INTRO_AGAIN_MS; } catch (e) { return true; }
+      }
+      function switchTo(id, isNew) {
         const p = reg.list.find(x => x.id === id);
         if (!p) return;
         p.lastPlayed = Date.now();
@@ -289,6 +299,7 @@
         saveRegistry();
         markChosen(id);
         if (loaded && loaded.id === id) { closePicker(); renderChip(); return; }
+        if (!isNew && introIsRecent()) skipIntro();
         location.reload(); // the game saves the old player on the way out
       }
 
@@ -419,6 +430,7 @@
           // This page is still playing as the replaced player: stop saving under their name, then start over
           NS = nsOf(GUEST);
           try { sessionStorage.removeItem(CHOSEN_KEY); } catch (e) {}
+          skipIntro();
           location.reload();
           return;
         }
@@ -647,7 +659,7 @@
         reg.list.push(p);
         saveRegistry();
         editing = null;
-        switchTo(p.id);
+        switchTo(p.id, true);
       }
 
       function deleteProfile(id) {
@@ -662,6 +674,7 @@
           // This page is still playing as them: stop saving under their name, then start over
           NS = nsOf(GUEST);
           try { sessionStorage.removeItem(CHOSEN_KEY); } catch (e) {}
+          skipIntro();
           location.reload();
           return;
         }
@@ -711,6 +724,7 @@
         const askToSwitch = () => {
           if (CFG.isRunning && CFG.isRunning() && !confirm('Switch players? The clock will pause, and this player\'s place is saved.')) return;
           try { sessionStorage.removeItem(CHOSEN_KEY); } catch (e) {}
+          skipIntro();
           location.reload(); // the game saves on the way out; the picker opens on the way in
         };
         chip.addEventListener('click', askToSwitch);
@@ -1652,7 +1666,10 @@
   try {
     if (window.DRAGONFOX_INTRO === false || window.__dragonfoxIntro) return;
     if (/[?&#]nointro\b/.test(location.search + location.hash)) return;
+    // The player picker asks for no intro on its reloads (switching players and so on)
+    try { if (sessionStorage.getItem("dragonfox-skip-intro")) { sessionStorage.removeItem("dragonfox-skip-intro"); return; } } catch (e) {}
     window.__dragonfoxIntro = true;
+    try { sessionStorage.setItem("dragonfox-intro-at", String(Date.now())); } catch (e) {}   // the picker checks this
 
     var HEAD_SRC = "data:image/png;base64,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";            // the fox head, drawn from the 3D model (faces left)
     var META = {"size": 60, "neck": [41.9, 38.1], "r": 6.95};                  // { size, neck: [x, y], r }: where the neck joins, body thickness
